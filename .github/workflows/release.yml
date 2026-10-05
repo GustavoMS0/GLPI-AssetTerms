@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir versao do setup.php com a tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          SETUP_VERSION=$(grep -oP "PLUGIN_ASSETTERMS_VERSION', '\K[^']+" assetterms/setup.php)
+          echo "Tag: $TAG_VERSION | setup.php: $SETUP_VERSION"
+          test "$TAG_VERSION" = "$SETUP_VERSION"
+
+      - name: Gerar o pacote
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp LICENSE README.md CHANGELOG.md assetterms/
+          zip -r "assetterms-$VERSION.zip" assetterms
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Publicar a Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES=$(awk "/^## \\[$VERSION\\]/{f=1;next} /^## \\[/{f=0} f" CHANGELOG.md)
+          gh release create "$GITHUB_REF_NAME" "assetterms-$VERSION.zip" \
+            --title "Asset Terms $VERSION" --notes "$NOTES"

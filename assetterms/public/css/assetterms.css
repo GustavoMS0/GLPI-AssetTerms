@@ -1,0 +1,324 @@
+/**
+ * ------------------------------------------------------------------------
+ * Asset Terms - Estilos da aba do computador
+ * ------------------------------------------------------------------------
+ */
+
+.termo-container {
+    max-width: 1050px;
+    margin: 15px auto;
+    font-family: inherit;
+}
+
+.termo-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.termo-header-card {
+    background: linear-gradient(to right, #f8fafc, #ffffff);
+    border-left: 5px solid #206bc4;
+}
+
+.termo-header-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 18px;
+}
+
+.termo-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.termo-subtitle {
+    margin: 4px 0 0 0;
+    font-size: 0.875rem;
+    color: #64748b;
+}
+
+.termo-badges {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.termo-badge {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.badge-status {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+
+.badge-user {
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+}
+
+.termo-specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    background: #ffffff;
+    border: 1px solid #edf2f7;
+    border-radius: 6px;
+    padding: 12px 16px;
+}
+
+.spec-item {
+    font-size: 0.85rem;
+}
+
+.spec-item.full-width {
+    grid-column: 1 / -1;
+}
+
+.spec-label {
+    display: block;
+    color: #64748b;
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+
+.spec-val {
+    color: #1e293b;
+    font-weight: 600;
+}
+
+.spec-val.highlight {
+    color: #0f172a;
+    font-family: monospace;
+    font-size: 0.95rem;
+}
+
+.section-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.termo-form-row {
+    margin-bottom: 16px;
+}
+
+.termo-form-row.two-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 768px) {
+    .termo-form-row.two-cols {
+        grid-template-columns: 1fr;
+    }
+}
+
+.termo-field {
+    margin-bottom: 14px;
+}
+
+.termo-label {
+    display: block;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 6px;
+    font-size: 0.875rem;
+}
+
+.termo-hint {
+    display: block;
+    color: #94a3b8;
+    font-size: 0.775rem;
+    margin-top: 4px;
+}
+
+.termo-radio-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.radio-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: #ffffff;
+}
+
+.radio-card:hover {
+    border-color: #93c5fd;
+    background: #f8fafc;
+}
+
+.radio-card.selected {
+    border-color: #206bc4;
+    background: #eff6ff;
+}
+
+.radio-card input[type="radio"] {
+    margin-top: 3px;
+}
+
+.radio-title {
+    display: block;
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 0.95rem;
+}
+
+.radio-desc {
+    display: block;
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+.termo-checklist-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 14px;
+}
+
+.check-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: #334155;
+    cursor: pointer;
+    user-select: none;
+}
+
+.termo-clausula-box {
+    background: #fdfbf7;
+    border-left: 4px solid #f59e0b;
+    border-radius: 4px;
+    padding: 14px 18px;
+    font-size: 0.825rem;
+    color: #78350f;
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+
+.termo-clausula-box strong {
+    display: block;
+    margin-bottom: 6px;
+    color: #92400e;
+}
+
+.termo-clausula-box p {
+    margin: 0;
+}
+
+.termo-signature-area {
+    margin-bottom: 20px;
+}
+
+.signature-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.canvas-wrapper {
+    position: relative;
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    background: #fafafa;
+    overflow: hidden;
+    height: 180px;
+    cursor: crosshair;
+}
+
+#signature-canvas {
+    width: 100%;
+    height: 180px;
+    display: block;
+    touch-action: none;
+}
+
+.canvas-placeholder {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #94a3b8;
+    font-size: 0.875rem;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.canvas-wrapper.has-signature .canvas-placeholder {
+    opacity: 0;
+}
+
+.termo-actions-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.termo-history-table {
+    margin: 0;
+    font-size: 0.875rem;
+}
+
+.termo-history-table th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+}
+
+.termo-container [hidden] {
+    display: none !important;
+}
+
+.termo-clausula-box ol,
+.termo-clausula-box ul {
+    margin: 6px 0 8px;
+    padding-left: 22px;
+}
+
+.termo-clausula-box p + p {
+    margin-top: 6px;
+}

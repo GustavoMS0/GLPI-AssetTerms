@@ -1,0 +1,8 @@
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Pacotes gerados
+*.zip
