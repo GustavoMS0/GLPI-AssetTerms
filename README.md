@@ -275,9 +275,9 @@ Para empresas que controlam formulários por código e revisão, como na ISO 900
 
 | | | | | |
 |---|---|---|---|---|
-| **[logo]** (ocupa as 3 linhas) | Tipo: **FORMULÁRIO** | | | Código: **FTIN 7.5.3.01** |
+| **[logo]** (ocupa as 3 linhas) | Tipo: **FORMULÁRIO** | | | Código: **DOC 7.5.3.01** |
 | | Título: **TERMO DE RESPONSABILIDADE – EQUIPAMENTOS TECNOLÓGICOS** | | | Nº Revisão: **06** |
-| | Data de emissão: **09/01/2011** | Última revisão: **24/08/2026** | Próxima revisão: **24/08/2029** | **Página 1 de 2** |
+| | Data de emissão: **09/01/2025** | Última revisão: **24/08/2026** | Próxima revisão: **24/08/2029** | **Página 1 de 2** |
 
 O rodapé mostra **"Elaborado e revisado por: …"** e **"Aprovado por: …"**.
 
