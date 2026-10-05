@@ -2,8 +2,8 @@
  * ------------------------------------------------------------------------
  * Asset Terms - Formulários e assinatura em canvas
  *
- * - Aba do computador (#form-termo-responsabilidade): assinatura na tela,
- *   envio por e-mail e PDF para o papel.
+ * - Aba do computador e Ativos > Termos (#form-termo-responsabilidade): assinatura na
+ *   tela, envio por e-mail, link de assinatura, PDF para o papel e "somente ciclo de vida".
  * - Página do link enviado por e-mail (#form-termo-assinatura): o colaborador assina.
  *
  * A aba é carregada por AJAX depois da página, então os formulários são
@@ -43,6 +43,29 @@
         return response.json().catch(function () {
             return { success: false, message: 'Erro ' + response.status + ' ao falar com o servidor.' };
         });
+    }
+
+    /** Copia texto; em HTTP sem TLS o navegador bloqueia a API de área de transferência */
+    function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok ? Promise.resolve() : Promise.reject(new Error('cópia bloqueada'));
+    }
+
+    function flashCopied(btn) {
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="ti ti-check"></i> Copiado';
+        setTimeout(function () { btn.innerHTML = original; }, 1800);
     }
 
     function reloadSoon() {
@@ -179,6 +202,10 @@
             form.querySelectorAll('[data-show]').forEach(function (el) {
                 el.hidden = el.dataset.show !== tipo;
             });
+            // "Somente ciclo de vida" esconde tudo o que é do termo
+            form.querySelectorAll('[data-mode]').forEach(function (el) {
+                el.hidden = (el.dataset.mode === 'status') !== (tipo === 'status');
+            });
             const state = checked.dataset.state;
             if (stateSelect && state && state !== '0') {
                 stateSelect.value = state;
@@ -235,12 +262,38 @@
             });
         });
 
-        // Envio por e-mail: o colaborador assina pelo link
-        form.querySelector('#btn-send-email').addEventListener('click', function () {
-            send('email').then(function (res) {
+        // Envio por e-mail: o colaborador assina pelo link (só aparece com o e-mail do GLPI configurado)
+        const emailBtn = form.querySelector('#btn-send-email');
+        if (emailBtn) {
+            emailBtn.addEventListener('click', function () {
+                send('email').then(function (res) {
+                    if (!res) return;
+                    ui.show('success', '<strong><i class="ti ti-mail-check"></i> ' + escapeHtml(res.message) + '</strong>');
+                    reloadSoon();
+                });
+            });
+        }
+
+        // Link de assinatura para o técnico mandar pelo Teams, WhatsApp, chat...
+        form.querySelector('#btn-send-link').addEventListener('click', function () {
+            send('link').then(function (res) {
                 if (!res) return;
-                ui.show('success', '<strong><i class="ti ti-mail-check"></i> ' + escapeHtml(res.message) + '</strong>');
-                reloadSoon();
+                ui.show('success',
+                    '<strong><i class="ti ti-link"></i> ' + escapeHtml(res.message) + '</strong>' +
+                    '<div class="input-group mt-2"><input type="text" class="form-control termo-link-field" readonly value="' + escapeHtml(res.link) + '">' +
+                    '<button type="button" class="btn btn-success termo-copy-link" data-link="' + escapeHtml(res.link) + '"><i class="ti ti-copy"></i> Copiar link</button></div>');
+            });
+        });
+
+        // Somente ciclo de vida: muda o status sem gerar termo
+        form.querySelector('#btn-status').addEventListener('click', function () {
+            send('status').then(function (res) {
+                if (!res) return;
+                ui.show('success', '<strong><i class="ti ti-check"></i> ' + escapeHtml(res.message) + '</strong>');
+                const statusBadge = document.querySelector('.badge-status strong');
+                if (statusBadge && res.status_name) statusBadge.textContent = res.status_name;
+                const userBadge = document.querySelector('.badge-user strong');
+                if (userBadge && res.user_name) userBadge.textContent = res.user_name;
             });
         });
 
@@ -269,6 +322,15 @@
                 });
         });
     }
+
+    // Copiar link de assinatura (resultado do "Gerar link" e lista de pendentes)
+    document.addEventListener('click', function (ev) {
+        const btn = ev.target.closest('.termo-copy-link');
+        if (!btn) return;
+        copyText(btn.dataset.link).then(function () { flashCopied(btn); }).catch(function () {
+            window.prompt('Copie o link:', btn.dataset.link);
+        });
+    });
 
     // Reenviar / cancelar termos pendentes (delegação: a aba é recriada ao recarregar)
     document.addEventListener('click', function (ev) {

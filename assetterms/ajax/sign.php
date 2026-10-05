@@ -84,9 +84,9 @@ try {
 }
 
 $DB->update(PluginAssettermsTerm::TABLE, ['documents_id' => $doc_id], ['id' => (int) $req['id']]);
-PluginAssettermsTerm::sendSignedMails($req, $pdf, PluginAssettermsTerm::fileName($dados, $agora), $dados['data']);
+$copia = PluginAssettermsTerm::sendSignedMails($req, $pdf, PluginAssettermsTerm::fileName($dados, $agora), $dados['data']);
 
 $json([
     'success' => true,
-    'message' => 'Termo assinado. Obrigado! Uma cópia em PDF foi enviada para o seu e-mail.',
+    'message' => 'Termo assinado. Obrigado!' . ($copia ? ' Uma cópia em PDF foi enviada para o seu e-mail.' : ' Se precisar de uma cópia, peça à TI.'),
 ]);

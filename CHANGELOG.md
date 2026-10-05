@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.0] - 2026-10-05
+
+### Adicionado
+- **Menu Ativos › Termos de Responsabilidade:** o técnico escolhe o computador e já preenche o termo, sem abrir a ficha. A página também lista os termos que aguardam assinatura em todos os computadores.
+- **Somente ciclo de vida:** muda só o status do equipamento (manutenção, empréstimo, descarte...), sem termo e sem colaborador. Pode manter ou remover o usuário, e a observação fica no histórico.
+- **Gerar link de assinatura:** cria o termo pendente e mostra o link para o técnico mandar pelo Teams, WhatsApp ou chat. O colaborador entra no GLPI e assina, como no e-mail. Os pendentes ganham o botão "Copiar link".
+- **Dados do equipamento no termo:** fabricante, modelo, tipo, processador, memória, disco e sistema operacional vêm do inventário e podem ser conferidos ou completados, com sugestões dos valores já cadastrados no GLPI. Muda só o termo, não o cadastro do computador.
+
+### Alterado
+- Sem o envio de e-mails do GLPI configurado, o botão de e-mail não aparece e o plugin orienta a usar o link. A cópia do PDF e o aviso ao técnico só são enviados quando há e-mail configurado.
+
 ## [1.1.0] - 2026-10-05
 
 ### Adicionado

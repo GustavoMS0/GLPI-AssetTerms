@@ -50,12 +50,21 @@ if (($_POST['acao'] ?? '') === 'cancelar') {
 }
 
 if (($_POST['acao'] ?? '') === 'reenviar') {
+    if (!PluginAssettermsTerm::mailConfigured()) {
+        $json(['success' => false, 'message' => 'O envio de e-mails do GLPI não está configurado. Use "Copiar link".'], 422);
+        return;
+    }
     // Usa o e-mail atual do colaborador, caso tenha sido corrigido depois do primeiro envio
     $atual = PluginAssettermsTerm::userData((int) $req['users_id'])['email'];
-    if ($atual !== '' && $atual !== ($req['data']['colaborador']['email'] ?? '')) {
+    if ($atual !== '') {
         $req['data']['colaborador']['email'] = $atual;
-        $DB->update(PluginAssettermsTerm::TABLE, PluginAssettermsTerm::dbValues(['data' => json_encode($req['data'], JSON_UNESCAPED_UNICODE)]), ['id' => (int) $req['id']]);
     }
+    if (($req['data']['colaborador']['email'] ?? '') === '') {
+        $json(['success' => false, 'message' => "{$nome} não tem e-mail cadastrado no GLPI. Use \"Copiar link\"."], 422);
+        return;
+    }
+    $req['data']['canal'] = 'email';
+    $DB->update(PluginAssettermsTerm::TABLE, PluginAssettermsTerm::dbValues(['data' => json_encode($req['data'], JSON_UNESCAPED_UNICODE)]), ['id' => (int) $req['id']]);
     $err = PluginAssettermsTerm::sendRequestMail($req);
     if ($err !== null) {
         $json(['success' => false, 'message' => "O e-mail não foi enviado: {$err}."], 502);

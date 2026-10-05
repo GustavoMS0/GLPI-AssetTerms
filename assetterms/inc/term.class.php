@@ -20,10 +20,10 @@ class PluginAssettermsTerm extends CommonGLPI
         'cabo'     => 'Cabo de força',
         'mochila'  => 'Mochila ou case de transporte',
         'mouse'    => 'Mouse',
-        'teclado'  => 'Teclado externo',
+        'teclado'  => 'Teclado',
         'hub'      => 'Adaptador de vídeo / hub USB-C',
         'headset'  => 'Headset / fone de ouvido',
-        'trava'    => 'Cabo de rede / trava de segurança',
+        'trava'    => 'Trava de segurança',
     ];
 
     /** Acessórios marcados por padrão na entrega */
@@ -132,16 +132,11 @@ class PluginAssettermsTerm extends CommonGLPI
         $dropdown = static fn (string $table, string $field): string
             => (int) ($computer->fields[$field] ?? 0) > 0 ? (string) Dropdown::getDropdownName($table, (int) $computer->fields[$field]) : '';
 
-        if ($disk_mb >= 1048576) {
-            $disk = round($disk_mb / 1048576, 1) . ' TB';
-        } else {
-            $disk = $disk_mb > 0 ? round($disk_mb / 1024) . ' GB' : '';
-        }
 
         return [
             'cpu'        => $cpu,
-            'ram'        => $ram_mb > 0 ? round($ram_mb / 1024) . ' GB' : '',
-            'disk'       => $disk,
+            'ram'        => $ram_mb > 0 ? self::formatMemory($ram_mb) : '',
+            'disk'       => $disk_mb > 0 ? self::formatDisk($disk_mb) : '',
             'so'         => $so,
             'fabricante' => $dropdown('glpi_manufacturers', 'manufacturers_id'),
             'modelo'     => $dropdown('glpi_computermodels', 'computermodels_id'),
@@ -326,9 +321,18 @@ class PluginAssettermsTerm extends CommonGLPI
         if ($state_id > 0 && !isset(self::getStates()[$state_id])) {
             $state_id = 0;
         }
+        // Dados do equipamento conferidos ou completados pelo técnico (só valem para o termo)
+        $equip = [];
+        foreach (array_keys(self::EQUIP_FIELDS) as $field) {
+            $value = trim(preg_replace('/\s+/u', ' ', (string) ($post['equip_' . $field] ?? '')));
+            if ($value !== '') {
+                $equip[$field] = mb_substr($value, 0, 150);
+            }
+        }
         return [
             'tipo'        => $tipo,
             'users_id'    => $uid,
+            'equipamento' => $equip,
             'checklist'   => array_values($checklist),
             'state_id'    => $state_id,
             'observacoes' => mb_substr(trim((string) ($post['observacoes'] ?? '')), 0, 2000),
@@ -355,7 +359,7 @@ class PluginAssettermsTerm extends CommonGLPI
             'tecnico'      => self::userName($tech_id) ?: 'TI',
             'tecnico_id'   => $tech_id,
             'colaborador'  => self::userData($in['users_id']) + ['id' => $in['users_id']],
-            'equipamento'  => self::getComputerSpecs($computer) + [
+            'equipamento'  => array_merge(self::getComputerSpecs($computer), $in['equipamento'] ?? []) + [
                 'nome'       => (string) ($computer->fields['name'] ?? ''),
                 'serial'     => (string) ($computer->fields['serial'] ?? ''),
                 'patrimonio' => (string) ($computer->fields['otherserial'] ?? ''),
@@ -464,7 +468,113 @@ class PluginAssettermsTerm extends CommonGLPI
         return [$doc_id, $status, $pdf];
     }
 
+    // ------------------------------------------------- Dados do equipamento
+
+    /** Campos do equipamento que o técnico pode conferir ou completar no termo */
+    public const EQUIP_FIELDS = [
+        'fabricante' => 'Fabricante',
+        'modelo'     => 'Modelo',
+        'tipo'       => 'Tipo',
+        'cpu'        => 'Processador',
+        'ram'        => 'Memória',
+        'disk'       => 'Disco',
+        'so'         => 'Sistema operacional',
+    ];
+
+    /**
+     * Valores já cadastrados no GLPI para cada campo do equipamento (sugestões do formulário).
+     *
+     * @return array<string, string[]>
+     */
+    public static function equipmentOptions(): array
+    {
+        global $DB;
+        $names = static function (string $table) use ($DB): array {
+            $out = [];
+            foreach ($DB->request(['SELECT' => ['name'], 'DISTINCT' => true, 'FROM' => $table, 'WHERE' => ['NOT' => ['name' => '']], 'ORDER' => 'name', 'LIMIT' => 300]) as $r) {
+                $out[] = (string) $r['name'];
+            }
+            return $out;
+        };
+        // Totais por computador já inventariados, mais tamanhos comuns
+        $totals = static function (string $table, string $field, callable $fmt, array $common) use ($DB): array {
+            $out = array_map($fmt, $common);
+            // GLPI 11: Glpi\DBAL\QueryExpression | GLPI 10: QueryExpression
+            $sum = 'SUM(' . $DB->quoteName($field) . ') AS total';
+            $sum = class_exists(\Glpi\DBAL\QueryExpression::class) ? new \Glpi\DBAL\QueryExpression($sum) : new \QueryExpression($sum);
+            foreach (
+                $DB->request([
+                    'SELECT' => [$sum],
+                    'FROM'   => $table,
+                    'WHERE'  => ['itemtype' => 'Computer', 'is_deleted' => 0],
+                    'GROUPBY' => 'items_id',
+                    'LIMIT'  => 2000,
+                ]) as $r
+            ) {
+                if ((int) $r['total'] > 0) {
+                    $out[] = $fmt((int) $r['total']);
+                }
+            }
+            $out = array_values(array_unique($out));
+            usort($out, static fn ($a, $b) => (float) $a <=> (float) $b ?: strcmp($a, $b));
+            return $out;
+        };
+
+        $cpu = [];
+        foreach ($DB->request(['SELECT' => ['designation'], 'DISTINCT' => true, 'FROM' => 'glpi_deviceprocessors', 'ORDER' => 'designation', 'LIMIT' => 300]) as $r) {
+            $cpu[] = (string) $r['designation'];
+        }
+        $so = [];
+        foreach (
+            $DB->request([
+                'SELECT'    => ['os.name AS os_name', 'ver.name AS ver_name'],
+                'DISTINCT'  => true,
+                'FROM'      => 'glpi_items_operatingsystems AS item',
+                'LEFT JOIN' => [
+                    'glpi_operatingsystems AS os'         => ['ON' => ['item' => 'operatingsystems_id', 'os' => 'id']],
+                    'glpi_operatingsystemversions AS ver' => ['ON' => ['item' => 'operatingsystemversions_id', 'ver' => 'id']],
+                ],
+                'LIMIT'     => 300,
+            ]) as $r
+        ) {
+            $so[] = trim(($r['os_name'] ?? '') . ' ' . ($r['ver_name'] ?? ''));
+        }
+        $so = array_values(array_unique(array_filter(array_merge($so, $names('glpi_operatingsystems')))));
+        sort($so);
+
+        return [
+            'fabricante' => $names('glpi_manufacturers'),
+            'modelo'     => $names('glpi_computermodels'),
+            'tipo'       => $names('glpi_computertypes'),
+            'cpu'        => array_values(array_filter($cpu)),
+            'ram'        => $totals('glpi_items_devicememories', 'size', [self::class, 'formatMemory'], [4096, 8192, 16384, 32768, 65536]),
+            'disk'       => $totals('glpi_items_deviceharddrives', 'capacity', [self::class, 'formatDisk'], [262144, 524288, 1048576, 2097152]),
+            'so'         => $so,
+        ];
+    }
+
+    public static function formatMemory(int $mb): string
+    {
+        return round($mb / 1024) . ' GB';
+    }
+
+    public static function formatDisk(int $mb): string
+    {
+        return $mb >= 1048576 ? round($mb / 1048576, 1) . ' TB' : round($mb / 1024) . ' GB';
+    }
+
     // ---------------------------------------------------------------- E-mail
+
+    /**
+     * O GLPI está configurado para enviar e-mails? (notificações por e-mail ativas e remetente definido)
+     * Sem isso, o plugin oferece o link de assinatura para o técnico compartilhar por outro meio.
+     */
+    public static function mailConfigured(): bool
+    {
+        global $CFG_GLPI;
+        return !empty($CFG_GLPI['notifications_mailing'])
+            && (!empty($CFG_GLPI['from_email']) || !empty($CFG_GLPI['admin_email']));
+    }
 
     /**
      * Envia um e-mail pela configuração de e-mail do GLPI. Retorna null ou a mensagem de erro.
@@ -552,18 +662,27 @@ class PluginAssettermsTerm extends CommonGLPI
         return self::sendMail($d['colaborador']['email'], $d['colaborador']['nome'], $subject, $html, $text, (int) $req['entities_id']);
     }
 
-    /** Depois da assinatura: cópia em PDF para o colaborador e aviso para quem enviou. Erros vão para o log. */
-    public static function sendSignedMails(array $req, string $pdf, string $arquivo, string $quando): void
+    /**
+     * Depois da assinatura: cópia em PDF para o colaborador e aviso para quem enviou.
+     * Só tenta se o e-mail do GLPI estiver configurado; erros vão para o log.
+     * Retorna true se a cópia chegou a ser enviada para o colaborador.
+     */
+    public static function sendSignedMails(array $req, string $pdf, string $arquivo, string $quando): bool
     {
         global $CFG_GLPI;
+
+        if (!self::mailConfigured()) {
+            return false;
+        }
 
         $e    = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $d    = $req['data'];
         $acao = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
         $eq   = $d['equipamento']['nome'];
         $errors = [];
+        $copia  = false;
 
-        $err = self::sendMail(
+        $err = $d['colaborador']['email'] === '' ? 'colaborador sem e-mail cadastrado' : self::sendMail(
             $d['colaborador']['email'],
             $d['colaborador']['nome'],
             "Cópia do termo de {$acao} assinado - {$eq}",
@@ -577,6 +696,8 @@ class PluginAssettermsTerm extends CommonGLPI
         );
         if ($err !== null) {
             $errors[] = "cópia para o colaborador: {$err}";
+        } else {
+            $copia = true;
         }
 
         $tech = self::userData((int) $req['users_id_tech']);
@@ -601,6 +722,7 @@ class PluginAssettermsTerm extends CommonGLPI
         if ($errors) {
             Toolbox::logInFile('php-errors', 'Asset Terms: termo #' . (int) $req['id'] . ' assinado, mas houve falha no e-mail (' . implode('; ', $errors) . ")\n");
         }
+        return $copia;
     }
 
     // --------------------------------------------------------- Texto do termo
@@ -817,7 +939,90 @@ class PluginAssettermsTerm extends CommonGLPI
 
     // ---------------------------------------------------------------- Tela
 
-    public static function showTermoForm(Computer $computer)
+    /** Pedidos aguardando assinatura de todos os computadores que o usuário pode ver (menu do plugin) */
+    public static function getAllPendingRequests(): array
+    {
+        global $DB;
+        $rows = [];
+        foreach (
+            $DB->request([
+                'SELECT'     => [self::TABLE . '.*', 'glpi_computers.name AS computer_name'],
+                'FROM'       => self::TABLE,
+                'INNER JOIN' => ['glpi_computers' => ['ON' => [self::TABLE => 'computers_id', 'glpi_computers' => 'id']]],
+                'WHERE'      => ['status' => self::PENDING] + getEntitiesRestrictCriteria(self::TABLE),
+                'ORDER'      => 'date_send DESC',
+                'LIMIT'      => 200,
+            ]) as $row
+        ) {
+            $row['data'] = json_decode((string) $row['data'], true) ?: [];
+            $rows[] = $row;
+        }
+        return $rows;
+    }
+
+    /** Tabela "Aguardando assinatura" (aba do computador e menu do plugin) */
+    public static function showPending(array $rows, bool $with_computer = false): void
+    {
+        global $CFG_GLPI;
+        $e    = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $url  = self::webPath() . '/ajax/request.php';
+        $mail = self::mailConfigured();
+        ?>
+        <div class="termo-card mt-4" id="termo-pendentes">
+            <h4 class="section-title"><i class="ti ti-clock"></i> Aguardando assinatura</h4>
+            <?php if (empty($rows)): ?>
+                <p class="text-muted p-3">Nenhum termo aguardando assinatura.</p>
+            <?php else: ?>
+            <div class="table-responsive">
+                <table class="table table-hover termo-history-table">
+                    <thead>
+                        <tr>
+                            <th>Criado em</th>
+                            <?php if ($with_computer): ?><th>Equipamento</th><?php endif; ?>
+                            <th>Termo</th><th>Colaborador</th><th>Enviado por</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($rows as $p):
+                            $can   = Computer::canUpdate() && (new Computer())->can((int) $p['computers_id'], UPDATE);
+                            $email = (string) ($p['data']['colaborador']['email'] ?? '');
+                            ?>
+                            <tr data-request="<?= (int) $p['id'] ?>">
+                                <td><strong><?= $e(Html::convDateTime($p['date_send'])) ?></strong><br>
+                                    <small class="text-muted"><?= ($p['data']['canal'] ?? 'email') === 'link' ? 'Link copiado' : 'Por e-mail' ?></small></td>
+                                <?php if ($with_computer): ?>
+                                    <td><a href="<?= $e($CFG_GLPI['root_doc'] . '/front/computer.form.php?id=' . (int) $p['computers_id']) ?>"><?= $e($p['computer_name'] ?? '') ?></a></td>
+                                <?php endif; ?>
+                                <td><?= $p['type'] === 'devolucao' ? 'Devolução' : 'Entrega' ?> <span class="text-muted">(<?= $e($p['code']) ?>)</span></td>
+                                <td><?= $e($p['data']['colaborador']['nome'] ?? '') ?><br><small class="text-muted"><?= $e($email) ?></small></td>
+                                <td><?= $e($p['data']['tecnico'] ?? '') ?></td>
+                                <td class="text-nowrap">
+                                    <?php if ($can): ?>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary termo-copy-link" data-link="<?= $e(self::signUrl((int) $p['id'])) ?>">
+                                        <i class="ti ti-copy"></i> Copiar link
+                                    </button>
+                                    <?php if ($mail && $email !== ''): ?>
+                                    <button type="button" class="btn btn-sm btn-outline-primary termo-request-action" data-action="reenviar" data-url="<?= $e($url) ?>">
+                                        <i class="ti ti-send"></i> <?= ($p['data']['canal'] ?? 'email') === 'link' ? 'Enviar por e-mail' : 'Reenviar' ?>
+                                    </button>
+                                    <?php endif; ?>
+                                    <button type="button" class="btn btn-sm btn-outline-danger termo-request-action" data-action="cancelar" data-url="<?= $e($url) ?>">
+                                        <i class="ti ti-x"></i> Cancelar
+                                    </button>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    /** Formulário do termo. $show_pending = false na página do menu, que já lista todos os pendentes. */
+    public static function showTermoForm(Computer $computer, bool $show_pending = true)
     {
         global $DB, $CFG_GLPI;
 
@@ -842,10 +1047,10 @@ class PluginAssettermsTerm extends CommonGLPI
                 'FROM'       => 'glpi_documents_items AS di',
                 'INNER JOIN' => ['glpi_documents AS doc' => ['ON' => ['di' => 'documents_id', 'doc' => 'id']]],
                 'WHERE'      => [
-                    'di.items_id' => $cid,
-                    'di.itemtype' => 'Computer',
+                    'di.items_id'    => $cid,
+                    'di.itemtype'    => 'Computer',
                     'doc.is_deleted' => 0,
-                    'doc.name'    => ['LIKE', 'Termo de %'],
+                    'doc.name'       => ['LIKE', 'Termo de %'],
                 ],
                 'ORDER'      => 'doc.date_creation DESC',
             ]) as $d
@@ -853,19 +1058,19 @@ class PluginAssettermsTerm extends CommonGLPI
             $termos[] = $d;
         }
 
-        $base       = self::webPath();
-        $pendentes  = self::getPendingRequests($cid);
-        $state_uso  = self::findState($states, 'Em uso');
-        $state_est  = self::findState($states, 'Em estoque');
-        $entrega    = self::clausula('entrega', $empresa);
-        $devolucao  = self::clausula('devolucao', $empresa);
+        $base      = self::webPath();
+        $mail      = self::mailConfigured();
+        $state_uso = self::findState($states, 'Em uso');
+        $state_est = self::findState($states, 'Em estoque');
+        $clausulas = ['entrega' => self::clausula('entrega', $empresa), 'devolucao' => self::clausula('devolucao', $empresa)];
+        $options   = $can_edit ? self::equipmentOptions() : [];
         ?>
         <div class="termo-container">
             <div class="termo-card termo-header-card">
                 <div class="termo-header-info">
                     <div class="termo-title-group">
                         <h3 class="termo-title"><i class="ti ti-file-certificate"></i> Termo de Responsabilidade</h3>
-                        <p class="termo-subtitle">Termo de entrega ou devolução, assinado na tela e arquivado em PDF na aba Documentos.</p>
+                        <p class="termo-subtitle">Entrega, devolução ou mudança de status do equipamento. Os termos ficam em PDF na aba Documentos.</p>
                     </div>
                     <div class="termo-badges">
                         <span class="termo-badge badge-status"><i class="ti ti-activity"></i> Status: <strong><?= $e($status) ?></strong></span>
@@ -878,9 +1083,6 @@ class PluginAssettermsTerm extends CommonGLPI
                     <div class="spec-item"><span class="spec-label">Fabricante / modelo:</span><span class="spec-val"><?= $e($or(trim($specs['fabricante'] . ' ' . $specs['modelo']))) ?></span></div>
                     <div class="spec-item"><span class="spec-label">Número de série:</span><span class="spec-val highlight"><?= $e($or($computer->fields['serial'] ?? '')) ?></span></div>
                     <div class="spec-item"><span class="spec-label">Patrimônio:</span><span class="spec-val highlight"><?= $e($or($computer->fields['otherserial'] ?? '')) ?></span></div>
-                    <div class="spec-item"><span class="spec-label">Processador:</span><span class="spec-val"><?= $e($or($specs['cpu'])) ?></span></div>
-                    <div class="spec-item"><span class="spec-label">Memória / disco:</span><span class="spec-val"><?= $e($or($specs['ram']) . ' / ' . $or($specs['disk'])) ?></span></div>
-                    <div class="spec-item full-width"><span class="spec-label">Sistema operacional:</span><span class="spec-val"><?= $e($or($specs['so'])) ?></span></div>
                 </div>
             </div>
 
@@ -888,32 +1090,36 @@ class PluginAssettermsTerm extends CommonGLPI
             <form id="form-termo-responsabilidade" class="termo-card" method="post" action="<?= $e($base . '/ajax/save.php') ?>" onsubmit="return false;">
                 <input type="hidden" name="computers_id" value="<?= $cid ?>">
 
-                <h4 class="section-title"><i class="ti ti-forms"></i> Dados da movimentação</h4>
+                <h4 class="section-title"><i class="ti ti-forms"></i> O que você quer fazer?</h4>
 
                 <div class="termo-form-row">
-                    <div class="termo-field">
-                        <label class="termo-label">Tipo de termo *</label>
-                        <div class="termo-radio-group">
-                            <label class="radio-card selected">
-                                <input type="radio" name="tipo_termo" value="entrega" data-state="<?= $state_uso ?>" checked>
-                                <div class="radio-content">
-                                    <span class="radio-title"><i class="ti ti-device-laptop"></i> Entrega ao colaborador</span>
-                                    <span class="radio-desc">Vincula o equipamento ao colaborador e muda o status para <strong>Em uso</strong></span>
-                                </div>
-                            </label>
-                            <label class="radio-card">
-                                <input type="radio" name="tipo_termo" value="devolucao" data-state="<?= $state_est ?>">
-                                <div class="radio-content">
-                                    <span class="radio-title"><i class="ti ti-archive"></i> Devolução à TI</span>
-                                    <span class="radio-desc">Desvincula o colaborador e muda o status para <strong>Em estoque</strong></span>
-                                </div>
-                            </label>
-                        </div>
+                    <div class="termo-radio-group termo-radio-3">
+                        <label class="radio-card selected">
+                            <input type="radio" name="tipo_termo" value="entrega" data-state="<?= $state_uso ?>" checked>
+                            <div class="radio-content">
+                                <span class="radio-title"><i class="ti ti-device-laptop"></i> Entrega ao colaborador</span>
+                                <span class="radio-desc">Termo de responsabilidade. Vincula o equipamento ao colaborador e muda o status para <strong>Em uso</strong></span>
+                            </div>
+                        </label>
+                        <label class="radio-card">
+                            <input type="radio" name="tipo_termo" value="devolucao" data-state="<?= $state_est ?>">
+                            <div class="radio-content">
+                                <span class="radio-title"><i class="ti ti-archive"></i> Devolução à TI</span>
+                                <span class="radio-desc">Termo de devolução. Desvincula o colaborador e muda o status para <strong>Em estoque</strong></span>
+                            </div>
+                        </label>
+                        <label class="radio-card">
+                            <input type="radio" name="tipo_termo" value="status" data-state="0">
+                            <div class="radio-content">
+                                <span class="radio-title"><i class="ti ti-refresh"></i> Somente ciclo de vida</span>
+                                <span class="radio-desc">Muda só o status (manutenção, empréstimo, descarte...), <strong>sem termo</strong> e sem colaborador</span>
+                            </div>
+                        </label>
                     </div>
                 </div>
 
                 <div class="termo-form-row two-cols">
-                    <div class="termo-field">
+                    <div class="termo-field" data-mode="termo">
                         <label class="termo-label">Colaborador *</label>
                         <?php
                         User::dropdown([
@@ -926,19 +1132,30 @@ class PluginAssettermsTerm extends CommonGLPI
                         <small class="termo-hint">Quem recebe ou devolve o equipamento.</small>
                     </div>
 
+                    <div class="termo-field" data-mode="status" hidden>
+                        <label class="termo-label">Usuário do equipamento</label>
+                        <select name="usuario_acao" class="form-select">
+                            <option value="manter">Manter: <?= $e($user_name) ?></option>
+                            <option value="remover">Remover o usuário do equipamento</option>
+                        </select>
+                        <small class="termo-hint">Nenhum termo é gerado. A mudança fica no histórico do equipamento.</small>
+                    </div>
+
                     <div class="termo-field">
-                        <label class="termo-label" for="target_state_id">Status após o termo</label>
+                        <label class="termo-label" for="target_state_id">
+                            <span data-mode="termo">Status após o termo</span><span data-mode="status" hidden>Novo status *</span>
+                        </label>
                         <select name="target_state_id" id="target_state_id" class="form-select">
                             <option value="0">Não alterar</option>
                             <?php foreach ($states as $sid => $sname): ?>
                                 <option value="<?= (int) $sid ?>" <?= $sid === $state_uso ? 'selected' : '' ?>><?= $e($sname) ?></option>
                             <?php endforeach; ?>
                         </select>
-                        <small class="termo-hint">Muda sozinho conforme o tipo: entrega = Em uso, devolução = Em estoque.</small>
+                        <small class="termo-hint" data-mode="termo">Muda sozinho conforme o tipo: entrega = Em uso, devolução = Em estoque.</small>
                     </div>
                 </div>
 
-                <div class="termo-field full-width">
+                <div class="termo-field full-width" data-mode="termo">
                     <label class="termo-label">
                         <span data-show="entrega">Acessórios entregues</span>
                         <span data-show="devolucao" hidden>Acessórios devolvidos</span>
@@ -953,13 +1170,35 @@ class PluginAssettermsTerm extends CommonGLPI
                     </div>
                 </div>
 
+                <div class="termo-field full-width" data-mode="termo">
+                    <label class="termo-label">Dados do equipamento no termo</label>
+                    <small class="termo-hint d-block mb-2">
+                        Vêm do inventário. Confira e complete: clique no campo para escolher um valor já cadastrado no GLPI ou digite.
+                        Muda só o termo, não o cadastro do computador.
+                    </small>
+                    <div class="termo-equip-grid">
+                        <?php foreach (self::EQUIP_FIELDS as $field => $label): ?>
+                            <label class="termo-equip-item">
+                                <span><?= $e($label) ?></span>
+                                <input type="text" class="form-control" name="equip_<?= $field ?>" value="<?= $e($specs[$field] ?? '') ?>"
+                                       list="termo-opt-<?= $field ?>" maxlength="150" autocomplete="off" placeholder="Não informado">
+                                <datalist id="termo-opt-<?= $field ?>">
+                                    <?php foreach ($options[$field] ?? [] as $opt): ?><option value="<?= $e($opt) ?>"></option><?php endforeach; ?>
+                                </datalist>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
                 <div class="termo-field full-width">
-                    <label class="termo-label" for="observacoes">Observações sobre o estado do equipamento</label>
+                    <label class="termo-label" for="observacoes">
+                        <span data-mode="termo">Observações sobre o estado do equipamento</span><span data-mode="status" hidden>Motivo / observação</span>
+                    </label>
                     <textarea name="observacoes" id="observacoes" rows="2" maxlength="2000" class="form-control"
                         placeholder="Ex.: equipamento novo, sem riscos; etiqueta de patrimônio intacta; bateria testada."></textarea>
                 </div>
 
-                <?php foreach (['entrega' => $entrega, 'devolucao' => $devolucao] as $tipo => $t): ?>
+                <?php foreach ($clausulas as $tipo => $t): ?>
                 <div class="termo-clausula-box" data-show="<?= $tipo ?>" <?= $tipo === 'devolucao' ? 'hidden' : '' ?>>
                     <strong><?= $e($t['titulo']) ?></strong>
                     <p><?= $e($t['declaracao']) ?></p>
@@ -970,9 +1209,9 @@ class PluginAssettermsTerm extends CommonGLPI
                 </div>
                 <?php endforeach; ?>
 
-                <div class="termo-signature-area">
+                <div class="termo-signature-area" data-mode="termo">
                     <div class="signature-header">
-                        <label class="termo-label"><i class="ti ti-writing"></i> Assinatura do colaborador (dedo, caneta ou mouse)</label>
+                        <label class="termo-label"><i class="ti ti-writing"></i> Assinatura do colaborador, se ele estiver presente</label>
                         <button type="button" id="btn-clear-signature" class="btn btn-sm btn-outline-secondary">
                             <i class="ti ti-eraser"></i> Limpar
                         </button>
@@ -983,12 +1222,17 @@ class PluginAssettermsTerm extends CommonGLPI
                     </div>
                 </div>
 
-                <div class="termo-actions-bar">
+                <div class="termo-actions-bar" data-mode="termo">
                     <button type="button" id="btn-save-termo" class="btn btn-primary btn-lg">
                         <i class="ti ti-check"></i> Gerar e arquivar termo
                     </button>
+                    <?php if ($mail): ?>
                     <button type="button" id="btn-send-email" class="btn btn-outline-primary btn-lg">
                         <i class="ti ti-mail-forward"></i> Enviar por e-mail para assinatura
+                    </button>
+                    <?php endif; ?>
+                    <button type="button" id="btn-send-link" class="btn btn-outline-primary btn-lg">
+                        <i class="ti ti-link"></i> Gerar link de assinatura
                     </button>
                     <button type="button" id="btn-print-blank" class="btn btn-outline-secondary btn-lg">
                         <i class="ti ti-printer"></i> PDF para assinar no papel
@@ -997,47 +1241,31 @@ class PluginAssettermsTerm extends CommonGLPI
                         <span class="visually-hidden">Gerando...</span>
                     </div>
                 </div>
-                <small class="termo-hint d-block mt-2">
-                    Pelo e-mail, o colaborador recebe um link, entra no GLPI com o próprio usuário e assina.
-                    O equipamento só é atualizado depois da assinatura.
+                <small class="termo-hint d-block mt-2" data-mode="termo">
+                    <?php if ($mail): ?>
+                        Pelo e-mail ou pelo link, o colaborador entra no GLPI com o próprio usuário e assina. O equipamento só é atualizado depois da assinatura.
+                    <?php else: ?>
+                        O envio de e-mails do GLPI não está configurado. Use <strong>Gerar link de assinatura</strong> e mande o link ao colaborador
+                        pelo Teams, WhatsApp ou chat: ele entra no GLPI com o próprio usuário e assina. O equipamento só é atualizado depois da assinatura.
+                    <?php endif; ?>
                 </small>
+
+                <div class="termo-actions-bar" data-mode="status" hidden>
+                    <button type="button" id="btn-status" class="btn btn-primary btn-lg">
+                        <i class="ti ti-refresh"></i> Atualizar status
+                    </button>
+                </div>
 
                 <div id="termo-alert-box" class="alert d-none mt-3"></div>
             </form>
             <?php endif; ?>
 
-            <?php if (!empty($pendentes)): ?>
-            <div class="termo-card mt-4" id="termo-pendentes">
-                <h4 class="section-title"><i class="ti ti-clock"></i> Aguardando assinatura</h4>
-                <div class="table-responsive">
-                    <table class="table table-hover termo-history-table">
-                        <thead>
-                            <tr><th>Enviado em</th><th>Termo</th><th>Colaborador</th><th>Enviado por</th><th></th></tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($pendentes as $p): ?>
-                                <tr data-request="<?= (int) $p['id'] ?>">
-                                    <td><strong><?= $e(Html::convDateTime($p['date_send'])) ?></strong></td>
-                                    <td><?= $p['type'] === 'devolucao' ? 'Devolução' : 'Entrega' ?> <span class="text-muted">(<?= $e($p['code']) ?>)</span></td>
-                                    <td><?= $e($p['data']['colaborador']['nome'] ?? '') ?><br><small class="text-muted"><?= $e($p['data']['colaborador']['email'] ?? '') ?></small></td>
-                                    <td><?= $e($p['data']['tecnico'] ?? '') ?></td>
-                                    <td class="text-nowrap">
-                                        <?php if ($can_edit): ?>
-                                        <button type="button" class="btn btn-sm btn-outline-primary termo-request-action" data-action="reenviar" data-url="<?= $e($base . '/ajax/request.php') ?>">
-                                            <i class="ti ti-send"></i> Reenviar
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-outline-danger termo-request-action" data-action="cancelar" data-url="<?= $e($base . '/ajax/request.php') ?>">
-                                            <i class="ti ti-x"></i> Cancelar
-                                        </button>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <?php endif; ?>
+            <?php
+            $pendentes = $show_pending ? self::getPendingRequests($cid) : [];
+            if (!empty($pendentes)) {
+                self::showPending($pendentes);
+            }
+            ?>
 
             <div class="termo-card mt-4">
                 <h4 class="section-title"><i class="ti ti-history"></i> Termos deste equipamento</h4>
@@ -1047,7 +1275,7 @@ class PluginAssettermsTerm extends CommonGLPI
                     <div class="table-responsive">
                         <table class="table table-hover table-striped termo-history-table">
                             <thead>
-                                <tr><th>Data</th><th>Documento</th><th>Detalhes</th><th>Gerado por</th><th></th></tr>
+                                <tr><th>Data</th><th>Documento</th><th>Detalhes</th><th>Arquivado por</th><th></th></tr>
                             </thead>
                             <tbody>
                                 <?php foreach ($termos as $t): ?>

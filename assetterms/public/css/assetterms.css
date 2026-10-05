@@ -347,3 +347,58 @@
     height: 18px;
     flex: none;
 }
+
+/* Três tipos: entrega, devolução e somente ciclo de vida */
+.termo-radio-group.termo-radio-3 {
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+}
+
+@media (max-width: 900px) {
+    .termo-radio-group,
+    .termo-radio-group.termo-radio-3 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Dados do equipamento no termo */
+.termo-equip-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px 14px;
+}
+
+.termo-equip-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: #475569;
+    font-weight: 600;
+}
+
+.termo-equip-item .form-control {
+    font-weight: 400;
+}
+
+/* Ativos > Termos de Responsabilidade */
+.termo-picker-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.termo-picker-row > :first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.termo-picker-link {
+    margin-top: 8px;
+    margin-bottom: -8px;
+}
+
+.termo-link-field {
+    font-family: monospace;
+    font-size: 0.8rem;
+}

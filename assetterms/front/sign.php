@@ -46,7 +46,7 @@ if ($req === null || (int) $req['users_id'] !== $me) {
         . '<p>Este termo não existe ou foi enviado para outro usuário. Confira se você entrou no GLPI com o seu próprio usuário.</p></div>';
 } elseif ((int) $req['status'] === PluginAssettermsTerm::SIGNED) {
     echo '<div class="termo-card"><h3 class="termo-title"><i class="ti ti-circle-check text-success"></i> Termo já assinado</h3>'
-        . '<p>Você assinou este termo em <strong>' . $e(Html::convDateTime($req['date_signed'])) . '</strong>. A cópia em PDF foi enviada para o seu e-mail.</p></div>';
+        . '<p>Você assinou este termo em <strong>' . $e(Html::convDateTime($req['date_signed'])) . '</strong>. ' . (PluginAssettermsTerm::mailConfigured() ? 'A cópia em PDF foi enviada para o seu e-mail.' : 'Se precisar de uma cópia, peça à TI.') . '</p></div>';
 } elseif ((int) $req['status'] === PluginAssettermsTerm::CANCELED) {
     echo '<div class="termo-card"><h3 class="termo-title"><i class="ti ti-circle-x text-danger"></i> Termo cancelado</h3>'
         . '<p>A TI cancelou este termo. Se tiver dúvidas, fale com a equipe de TI.</p></div>';

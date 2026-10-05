@@ -1,17 +1,20 @@
 # Asset Terms
 
-**Termos de responsabilidade para o GLPI.** Gere o termo de **entrega** ou de **devolução** de um equipamento direto na ficha do computador. O colaborador assina na tela, na hora ou **pelo link enviado por e-mail**, e o PDF fica arquivado no GLPI.
+**Termos de responsabilidade e ciclo de vida dos equipamentos no GLPI.**
+- **Termo de entrega ou de devolução** gerado direto no GLPI. O colaborador assina na tela, na hora, ou depois pelo link enviado por **e-mail** ou por qualquer chat. O PDF fica arquivado no GLPI.
+- **Mudança de status** (manutenção, empréstimo, descarte...) sem termo nenhum.
 
 ```
-Ativos › Computadores › NB-COLAB01 › aba "Termo de Responsabilidade"
+Ativos › Termos de Responsabilidade › [ NB-COLAB01            ▾ ]
 
-  ( • ) Entrega ao colaborador      (   ) Devolução à TI
-  Colaborador: [ Maria Souza          ▾ ]   Status após o termo: [ Em uso ▾ ]
+  ( • ) Entrega ao colaborador   (   ) Devolução à TI   (   ) Somente ciclo de vida
+  Colaborador: [ Maria Souza ▾ ]          Status após o termo: [ Em uso ▾ ]
   Acessórios:  [x] Fonte  [x] Cabo de força  [ ] Mochila  [ ] Mouse ...
+  Equipamento: Dell Inc. | Latitude 5440 | Notebook | i5-1235U | 16 GB | 512 GB | Windows 11 Pro
   ┌──────────────────────────────────────────────┐
   │            ~ assinatura na tela ~            │
   └──────────────────────────────────────────────┘
-  [ ✓ Gerar e arquivar termo ]  [ ✉ Enviar por e-mail para assinatura ]  [ 🖨 PDF para o papel ]
+  [ ✓ Gerar e arquivar ]  [ ✉ Enviar por e-mail ]  [ 🔗 Gerar link ]  [ 🖨 PDF para o papel ]
 ```
 
 | Versão do GLPI | Suporte |
@@ -23,84 +26,169 @@ Ativos › Computadores › NB-COLAB01 › aba "Termo de Responsabilidade"
 
 ## Funcionalidades
 
-- **Aba "Termo de Responsabilidade"** em cada computador, com os dados do inventário: fabricante, modelo, número de série, patrimônio, processador, memória, disco e sistema operacional.
+- **Dois caminhos para o mesmo formulário:**
+  - **Menu Ativos › Termos de Responsabilidade:** escolha o computador e preencha, sem abrir a ficha. A página também lista os termos que **aguardam assinatura** em todos os computadores;
+  - **aba "Termo de Responsabilidade"** em cada computador.
+- **Três ações:**
+  - **entrega ao colaborador;**
+  - **devolução à TI;**
+  - **somente ciclo de vida:** muda só o status, sem termo e sem colaborador.
 - **Termos de entrega e de devolução** com textos próprios. O texto aparece na tela antes da assinatura e é o mesmo que vai para o PDF.
+- **Dados do equipamento:**
+  - fabricante, modelo, tipo, processador, memória, disco e sistema operacional vêm do inventário;
+  - o técnico pode conferir ou completar cada campo, escolhendo entre os **valores já cadastrados no GLPI** ou digitando;
+  - a alteração vale só para o termo, não para o cadastro do computador.
 - **Checklist de acessórios** e campo de **observações** sobre o estado do equipamento.
-- **Assinatura na tela** com o dedo, uma caneta ou o mouse. Funciona no computador, no tablet e no celular.
-- **PDF de uma página**, arquivado na aba **Documentos** do computador e aberto direto no navegador.
-- **Registro da assinatura:** o PDF guarda a data, a hora, o técnico presente, o endereço IP e um **código do documento**.
+- **Quatro formas de assinar:**
+  1. **na tela, na hora:** com o dedo, uma caneta ou o mouse, no computador, no tablet ou no celular;
+  2. **pelo e-mail:** o colaborador recebe um link, entra no GLPI com o próprio usuário, marca "li e concordo" e assina;
+  3. **pelo link copiado:** a mesma coisa, mas o técnico manda o link pelo Teams, WhatsApp ou chat. Funciona **sem o e-mail do GLPI configurado**;
+  4. **no papel:** PDF para imprimir, sem gravar nada.
+- **PDF de uma página**, arquivado na aba **Documentos** do computador e aberto direto no navegador. Ele registra a data, a hora, o IP, o usuário do GLPI (na assinatura pelo link) e um **código do documento**.
 - **O equipamento é atualizado sozinho:**
-  - na entrega, o colaborador vira o usuário do equipamento e o status passa a **Em uso**;
-  - na devolução, o usuário fica vazio e o status passa a **Em estoque**.
-  - Tudo fica registrado no **histórico**.
-- **Envio por e-mail para assinatura:**
-  - o colaborador recebe um link, entra no GLPI com o próprio usuário, lê o termo, marca "li e concordo" e assina;
-  - o equipamento só é atualizado depois da assinatura;
-  - o colaborador recebe uma cópia em PDF, e quem enviou recebe um aviso.
-- **PDF para assinar no papel**, sem gravar nada, para quem prefere a via física.
-- **Linha do tempo** com todos os termos já gerados para o equipamento, e lista dos que **aguardam assinatura**, com opções para reenviar e cancelar.
+  - na entrega, o colaborador vira o usuário e o status passa a **Em uso**;
+  - na devolução, o usuário fica vazio e o status passa a **Em estoque**;
+  - na assinatura pelo link, a atualização só acontece depois que o colaborador assina;
+  - tudo fica no **histórico**.
+- **Termos aguardando assinatura** com os botões **Copiar link**, **Reenviar** (por e-mail) e **Cancelar**.
 - **Seguro:**
-  - só gera termos quem pode alterar o computador;
+  - só gera termos e muda status quem pode alterar o computador;
   - o envio é protegido pelo token CSRF do GLPI;
   - os dados são validados no servidor;
   - a assinatura é conferida como imagem PNG;
-  - o link do e-mail exige login no GLPI e só abre para o colaborador destinatário. Outro usuário logado não vê nem assina o termo.
+  - o link exige login no GLPI e só abre para o colaborador destinatário. Outro usuário logado não vê nem assina o termo.
 - **Os PDFs ficam na aba Documentos do GLPI:** remover o plugin não apaga nenhum termo assinado.
 
 ---
 
 ## Instalação
 
+> O instalador automático [Install-Gm](https://github.com/GustavoMS0/Install-Gm) já baixa e ativa o plugin. Se você usou o Install-Gm, pule esta parte.
+
+### Pelo terminal (Linux)
+
+No servidor do GLPI, rode os comandos abaixo. Eles baixam a última versão, colocam o plugin na pasta do GLPI, instalam e ativam.
+
+```bash
+# Pasta onde o GLPI está instalado (ajuste se for outra, ex.: /var/www/html/glpi)
+GLPI_DIR=/var/www/glpi
+
+# Ferramentas usadas para baixar e extrair
+sudo apt-get install -y curl unzip      # Debian/Ubuntu (no RHEL/Rocky: sudo dnf install -y curl unzip)
+
+# Baixa a última versão publicada
+cd /tmp
+URL=$(curl -fsSL https://api.github.com/repos/GustavoMS0/GLPI-AssetTerms/releases/latest \
+      | grep -o 'https://[^"]*/assetterms-[^"]*\.zip' | head -n1)
+curl -fsSL -o assetterms.zip "$URL"
+
+# Coloca na pasta de plugins do GLPI
+sudo rm -rf "$GLPI_DIR/plugins/assetterms"
+sudo unzip -q assetterms.zip -d "$GLPI_DIR/plugins/"
+sudo chown -R root:root "$GLPI_DIR/plugins/assetterms"
+sudo chmod -R u=rwX,go=rX "$GLPI_DIR/plugins/assetterms"
+
+# Instala, ativa e limpa o cache do GLPI
+cd "$GLPI_DIR"
+sudo -u www-data php bin/console plugin:install --username=glpi assetterms
+sudo -u www-data php bin/console plugin:activate assetterms
+sudo -u www-data php bin/console cache:clear
+```
+
+Depois, entre no GLPI. O menu **Ativos › Termos de Responsabilidade** já aparece.
+
+> - **CentOS, Rocky ou RHEL:** o usuário do servidor web é `apache`, não `www-data`. Troque `sudo -u www-data` por `sudo -u apache`.
+> - **`--username=glpi`:** é o login de um administrador do GLPI. Troque se o seu administrador tiver outro nome.
+
+Para conferir:
+
+```bash
+cd /var/www/glpi && sudo -u www-data php bin/console plugin:list | grep -i assetterms
+```
+
+O resultado deve mostrar o plugin como **Ativado**.
+
+### Atualizar para uma versão nova
+
+Rode **os mesmos comandos da instalação**. Eles trocam os arquivos, e o `plugin:install` aplica as mudanças no banco. Nada se perde:
+- os termos já arquivados ficam na aba Documentos;
+- os termos que aguardam assinatura continuam pendentes.
+
+### Remover
+
+```bash
+cd /var/www/glpi
+sudo -u www-data php bin/console plugin:deactivate assetterms
+sudo -u www-data php bin/console plugin:uninstall --username=glpi assetterms
+sudo rm -rf /var/www/glpi/plugins/assetterms
+```
+
+Os PDFs dos termos assinados continuam na aba **Documentos** dos computadores. Só os termos que ainda aguardavam assinatura são descartados.
+
+### Pela tela
+
 1. Baixe o arquivo `assetterms-<versão>.zip` da [última Release](https://github.com/GustavoMS0/GLPI-AssetTerms/releases/latest).
 2. Extraia na pasta `plugins` do GLPI. O resultado deve ser `plugins/assetterms/setup.php`.
-3. Instale e ative o plugin. Escolha uma das formas:
-   - pela tela, em **Configurar › Plugins** (*Asset Terms*);
-   - pelo console:
-     ```bash
-     cd /var/www/glpi
-     sudo -u www-data php bin/console plugin:install --username=glpi assetterms
-     sudo -u www-data php bin/console plugin:activate assetterms
-     ```
+3. Em **Configurar › Plugins**, clique em **Instalar** e depois em **Ativar** no *Asset Terms*.
 
-> O instalador automático [Install-Gm](https://github.com/GustavoMS0/Install-Gm) já baixa e ativa o plugin.
+### URL do GLPI
 
-### E-mail
+O link de assinatura usa o endereço configurado em **Configurar › Geral › URL da aplicação**. Esse endereço precisa abrir na máquina dos colaboradores, por exemplo `http://glpi.empresa.local`. O Install-Gm já configura.
 
-Para o envio por e-mail, o GLPI precisa estar configurado para mandar e-mails:
+### E-mail (opcional)
 
-- **Servidor de e-mail e remetente:** em **Configurar › Notificações › Configuração das notificações por e-mail**. Use o botão de teste da própria tela para conferir.
-- **URL do GLPI:** em **Configurar › Geral › URL da aplicação**. O link do e-mail usa esse endereço, então ele precisa abrir para os colaboradores, por exemplo `http://glpi.empresa.local`.
-- **E-mail do colaborador:** em **Administração › Usuários**.
+**Sem e-mail configurado, o plugin funciona normalmente:**
+- o botão **Enviar por e-mail** não aparece;
+- o técnico usa **Gerar link de assinatura** e manda o link por outro meio;
+- o colaborador não recebe cópia automática do PDF. A TI pode mandar o arquivo da aba Documentos.
+
+Para ativar o e-mail:
+- **Servidor de e-mail e remetente:** em **Configurar › Notificações**:
+  - ative **Notificações por e-mail**;
+  - preencha a **Configuração das notificações por e-mail** e confira com o botão de teste da tela.
+- **E-mail de cada colaborador:** em **Administração › Usuários**.
 
 ### Status "Em uso" e "Em estoque"
 
-O plugin sugere esses status ao gerar o termo. Se eles não existirem, crie-os em **Configurar › Listas suspensas › Status dos itens**. O Install-Gm já cria os dois.
+O plugin sugere esses status ao gerar o termo. Se eles não existirem, crie-os em **Configurar › Listas suspensas › Status dos itens**. O Install-Gm já cria os dois e mais os de ciclo de vida:
+- Em preparação;
+- Em manutenção;
+- Empréstimo;
+- Desativado / Descarte.
 
 ---
 
 ## Como usar
 
-1. Abra o computador em **Ativos › Computadores** e clique na aba **Termo de Responsabilidade**.
-2. Escolha **Entrega ao colaborador** ou **Devolução à TI**.
-3. Selecione o **colaborador**, marque os **acessórios** e, se precisar, escreva as **observações**.
-4. O colaborador lê o termo e **assina na tela**.
-5. Clique em **Gerar e arquivar termo**.
+1. Abra **Ativos › Termos de Responsabilidade** e escolha o computador. Também dá para abrir o computador e clicar na aba **Termo de Responsabilidade**.
+2. Escolha **Entrega ao colaborador**, **Devolução à TI** ou **Somente ciclo de vida**.
 
-Para assinar no papel, clique em **PDF para assinar no papel**, imprima e depois anexe a via digitalizada na aba **Documentos**.
+### Entrega ou devolução
 
-### Assinatura pelo link do e-mail
+1. Selecione o **colaborador** e marque os **acessórios**.
+2. Confira os **dados do equipamento**. Quando falta algo no inventário, clique no campo para escolher um valor já cadastrado no GLPI ou digite.
+3. Se precisar, escreva as **observações**.
+4. Escolha como assinar:
 
-1. Na aba, preencha o termo como acima e clique em **Enviar por e-mail para assinatura**. Não é preciso assinar no quadro.
-2. O colaborador recebe o e-mail **"Termo de entrega do equipamento … para assinatura"** e clica em **Ler e assinar o termo**.
-3. Ele entra no GLPI com o próprio usuário. Se já estiver logado, a página abre direto.
-4. Ele lê o termo, marca **"Li o termo e concordo"** e assina com o dedo, uma caneta ou o mouse.
-5. Ao assinar:
-   - o PDF é arquivado na aba **Documentos**;
-   - o usuário e o status do equipamento são atualizados;
-   - o colaborador recebe uma cópia em PDF, e quem enviou recebe um aviso.
+| Botão | Quando usar | O que acontece |
+|---|---|---|
+| **Gerar e arquivar termo** | o colaborador está na sua frente | ele assina no quadro, e o PDF é arquivado na hora |
+| **Enviar por e-mail para assinatura** | o colaborador está longe, e o GLPI envia e-mails | ele recebe o link por e-mail, entra no GLPI e assina |
+| **Gerar link de assinatura** | o colaborador está longe, ou o GLPI não envia e-mails | você copia o link e manda pelo Teams, WhatsApp ou chat |
+| **PDF para assinar no papel** | assinatura física | o PDF abre para imprimir. Depois, anexe a via digitalizada na aba **Documentos** |
 
-Enquanto o termo não é assinado, ele aparece em **Aguardando assinatura** na aba do computador, com os botões:
-- **Reenviar:** manda o mesmo link de novo, para o e-mail atual do colaborador;
+Na assinatura pelo link, por e-mail ou copiado, o colaborador:
+1. abre o link e entra no GLPI com o próprio usuário. Se já estiver logado, a página abre direto;
+2. lê o termo, marca **"Li o termo e concordo"** e assina com o dedo, uma caneta ou o mouse.
+
+Ao assinar:
+- o PDF é arquivado na aba **Documentos**;
+- o usuário e o status do equipamento são atualizados;
+- com o e-mail configurado, o colaborador recebe uma cópia em PDF e quem enviou recebe um aviso.
+
+Enquanto não é assinado, o termo aparece em **Aguardando assinatura**, na aba e no menu, com os botões:
+- **Copiar link:** para mandar de novo por qualquer meio;
+- **Reenviar:** por e-mail, para o e-mail atual do colaborador;
 - **Cancelar:** o link deixa de funcionar.
 
 | Situação | O que acontece ao abrir o link |
@@ -110,10 +198,24 @@ Enquanto o termo não é assinado, ele aparece em **Aguardando assinatura** na a
 | Termo já assinado | mostra a data da assinatura |
 | Termo cancelado pela TI | avisa que foi cancelado |
 
-O PDF traz:
+### Somente ciclo de vida
+
+Para mudar o status sem termo nenhum: equipamento para a manutenção, empréstimo, descarte, volta ao estoque etc.
+
+1. Escolha o **novo status**. É obrigatório.
+2. Escolha se o equipamento **mantém** o usuário atual ou fica **sem usuário**.
+3. Escreva o **motivo**, se quiser. Ele vai para o histórico.
+4. Clique em **Atualizar status**.
+
+Nenhum PDF é gerado. O histórico do computador registra, por exemplo:
+
+> *Ciclo de vida: status alterado para Em manutenção e usuário removido, sem termo. Observação: Tela quebrada, enviado para a garantia.*
+
+### O que vai no PDF
+
 - o cabeçalho, com a empresa, a data e o código do documento;
 - o colaborador, com o nome, a matrícula e o e-mail;
-- o equipamento;
+- o equipamento, com os dados conferidos pelo técnico;
 - os acessórios e as observações;
 - a declaração;
 - as assinaturas do colaborador e da TI, com a cidade e a data por extenso.
@@ -162,6 +264,7 @@ Tudo fica em [`assetterms/inc/term.class.php`](assetterms/inc/term.class.php):
 |---|---|
 | Texto dos termos (tela e PDF) | função `clausula()` |
 | Lista de acessórios | constante `CHECKLIST` |
+| Campos de dados do equipamento | constante `EQUIP_FIELDS` e função `equipmentOptions()` (sugestões) |
 | Acessórios marcados por padrão | constante `CHECKLIST_DEFAULT` |
 | Layout do PDF | função `buildPdf()` |
 
@@ -169,9 +272,9 @@ Tudo fica em [`assetterms/inc/term.class.php`](assetterms/inc/term.class.php):
 
 ## Permissões
 
-| Perfil | Vê a aba | Gera, envia, reenvia e cancela termos |
+| Perfil | Vê a aba e o menu | Gera, envia e cancela termos e muda o status |
 |---|---|---|
-| Pode **ver** computadores | sim, só a lista de termos | não |
+| Pode **ver** computadores | sim, só as listas de termos | não |
 | Pode **alterar** o computador | sim | sim |
 | **Qualquer usuário**, inclusive do autoatendimento | não | assina pelo link só os termos enviados para ele |
 
@@ -202,6 +305,12 @@ Validado no GLPI 11.0.10 e no GLPI 10.0.28, com o navegador:
 | Abrir o link de novo depois de assinar | "Termo já assinado", sem permitir uma segunda assinatura ✅ |
 | Reenviar e cancelar | reenvia o mesmo link; depois de cancelar, o link não permite assinar ✅ |
 | Colaborador sem e-mail cadastrado | avisa e não envia ✅ |
+| GLPI sem e-mail configurado | botão de e-mail some; "Gerar link" cria o termo e mostra o link para copiar; nenhum e-mail enviado ✅ |
+| Colaborador assina pelo link copiado | PDF arquivado e equipamento atualizado, sem precisar de e-mail ✅ |
+| Somente ciclo de vida | esconde o termo e a assinatura, exige o novo status, muda o status, remove ou mantém o usuário, não gera documento e registra a observação no histórico ✅ |
+| Dados do equipamento | sugestões com valores do GLPI; valores editados vão para o termo sem alterar o cadastro do computador ✅ |
+| Menu Ativos › Termos de Responsabilidade | aparece no menu; escolher o computador abre o formulário; lista os pendentes de todos os computadores ✅ |
+| Usuário do autoatendimento abre a página do menu | acesso negado ✅ |
 
 ---
 

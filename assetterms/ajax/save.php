@@ -7,12 +7,15 @@
  * POST (cabeçalho X-Glpi-Csrf-Token)
  *   computers_id, tipo_termo (entrega|devolucao), users_id, target_state_id,
  *   checklist[], observacoes, signature_image (data:image/png;base64,...),
- *   modo (arquivar|papel|email)
+ *   modo (arquivar|papel|email|link), equip_* (dados do equipamento no termo)
+ *   tipo_termo=status: usuario_acao (manter|remover), target_state_id, observacoes
  *
  * modo=arquivar: assinatura na tela. Grava o PDF na aba Documentos, atualiza usuário e
  *                status do computador e registra no histórico. Devolve JSON.
  * modo=papel   : devolve o PDF sem assinatura, para imprimir e assinar à mão. Nada é gravado.
  * modo=email   : envia ao colaborador o link do termo. O computador só muda quando ele assinar.
+ * modo=link    : igual ao e-mail, mas devolve o link para o técnico mandar por outro meio.
+ * tipo=status  : só muda o status (ciclo de vida) e, se pedido, remove o usuário. Sem termo.
  * ------------------------------------------------------------------------
  */
 
@@ -43,7 +46,33 @@ if (!$computer->can($cid, UPDATE)) {
     return;
 }
 
-$modo = in_array($_POST['modo'] ?? '', ['papel', 'email'], true) ? $_POST['modo'] : 'arquivar';
+// ----------------------------------------------- Somente ciclo de vida (sem termo)
+if (($_POST['tipo_termo'] ?? '') === 'status') {
+    $state_id = (int) ($_POST['target_state_id'] ?? 0);
+    if ($state_id <= 0 || !isset(PluginAssettermsTerm::getStates()[$state_id])) {
+        $json(['success' => false, 'message' => 'Escolha o novo status.'], 422);
+        return;
+    }
+    $remover = ($_POST['usuario_acao'] ?? '') === 'remover';
+    $obs     = mb_substr(trim((string) ($_POST['observacoes'] ?? '')), 0, 2000);
+    $update  = ['id' => $cid, 'states_id' => $state_id];
+    if ($remover) {
+        $update['users_id'] = 0;
+    }
+    $computer->update($update);
+    $status = (string) Dropdown::getDropdownName('glpi_states', $state_id);
+    Log::history($cid, 'Computer', [0, '', "Ciclo de vida: status alterado para {$status}" . ($remover ? ' e usuário removido' : '') . ', sem termo.' . ($obs !== '' ? " Observação: {$obs}" : '')], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    $computer->getFromDB($cid);
+    $json([
+        'success'     => true,
+        'message'     => "Status alterado para {$status}. A mudança ficou registrada no histórico do equipamento.",
+        'status_name' => $status,
+        'user_name'   => PluginAssettermsTerm::userName((int) $computer->fields['users_id']) ?: 'Nenhum colaborador vinculado',
+    ]);
+    return;
+}
+
+$modo = in_array($_POST['modo'] ?? '', ['papel', 'email', 'link'], true) ? $_POST['modo'] : 'arquivar';
 $in   = PluginAssettermsTerm::collectInput($_POST);
 if (is_string($in)) {
     $json(['success' => false, 'message' => $in], 422);
@@ -55,12 +84,17 @@ $agora   = time();
 $dados   = PluginAssettermsTerm::buildData($computer, $in, $tech_id);
 $titulo  = $dados['tipo'] === 'devolucao' ? 'Termo de Devolução' : 'Termo de Entrega';
 
-// ---------------------------------------------------------- Envio por e-mail
-if ($modo === 'email') {
-    if ($dados['colaborador']['email'] === '') {
-        $json(['success' => false, 'message' => "{$dados['colaborador']['nome']} não tem e-mail cadastrado no GLPI. Cadastre em Administração > Usuários."], 422);
+// ---------------------------------------- Assinatura pelo link (e-mail ou copiado)
+if ($modo === 'email' || $modo === 'link') {
+    if ($modo === 'email' && !PluginAssettermsTerm::mailConfigured()) {
+        $json(['success' => false, 'message' => 'O envio de e-mails do GLPI não está configurado. Use "Gerar link de assinatura".'], 422);
         return;
     }
+    if ($modo === 'email' && $dados['colaborador']['email'] === '') {
+        $json(['success' => false, 'message' => "{$dados['colaborador']['nome']} não tem e-mail cadastrado no GLPI. Cadastre em Administração > Usuários ou use \"Gerar link de assinatura\"."], 422);
+        return;
+    }
+    $dados['canal'] = $modo;
     $now = date('Y-m-d H:i:s', $agora);
     $DB->insert(PluginAssettermsTerm::TABLE, PluginAssettermsTerm::dbValues([
         'computers_id'  => $cid,
@@ -76,7 +110,11 @@ if ($modo === 'email') {
         'date_mod'      => $now,
     ]));
     $req = PluginAssettermsTerm::getRequest((int) $DB->insertId());
-    $err = $req !== null ? PluginAssettermsTerm::sendRequestMail($req) : 'falha ao gravar o pedido';
+    if ($req === null) {
+        $err = 'falha ao gravar o pedido';
+    } else {
+        $err = $modo === 'email' ? PluginAssettermsTerm::sendRequestMail($req) : null;
+    }
     if ($err !== null) {
         if ($req !== null) {
             $DB->delete(PluginAssettermsTerm::TABLE, ['id' => (int) $req['id']]);
@@ -84,7 +122,16 @@ if ($modo === 'email') {
         $json(['success' => false, 'message' => "O e-mail não foi enviado: {$err}."], 502);
         return;
     }
-    Log::history($cid, 'Computer', [0, '', "{$titulo} enviado por e-mail para assinatura de {$dados['colaborador']['nome']} ({$dados['colaborador']['email']}). Código: {$dados['codigo']}."], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    $como = $modo === 'email' ? "enviado por e-mail ({$dados['colaborador']['email']})" : 'com link de assinatura gerado';
+    Log::history($cid, 'Computer', [0, '', "{$titulo} {$como} para assinatura de {$dados['colaborador']['nome']}. Código: {$dados['codigo']}."], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    if ($modo === 'link') {
+        $json([
+            'success' => true,
+            'link'    => PluginAssettermsTerm::signUrl((int) $req['id']),
+            'message' => "Link criado. Mande para {$dados['colaborador']['nome']}: ao abrir, ele entra no GLPI com o próprio usuário e assina. O equipamento será atualizado depois da assinatura.",
+        ]);
+        return;
+    }
     $json([
         'success' => true,
         'reload'  => true,
