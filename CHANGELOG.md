@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.0] - 2026-10-05
+
+### Adicionado
+- **Código do documento configurável** (Configurar › Plugins › Asset Terms):
+  - formato com marcadores `{prefixo}`, `{ano}`, `{mes}`, `{dia}`, `{seq}`, `{tipo}` e `{aleatorio}`, por exemplo `{prefixo}-{ano}-{seq}` = TR-2026-000124;
+  - número sequencial por empresa, com dígitos configuráveis, opção de recomeçar a cada ano e "Próximo número" para continuar uma numeração existente;
+  - a numeração é atômica: termos criados ao mesmo tempo nunca recebem o mesmo número;
+  - o padrão continua aleatório, como nas versões anteriores.
+- **Aparência do documento:** logo (PNG ou JPG, até 1 MB) no topo do PDF, cor principal dos títulos e texto de rodapé em todas as páginas, ao lado do número da página.
+- O PDF de exemplo da configuração mostra o código, o logo, a cor e o rodapé do formulário, sem consumir número.
+
+### Alterado
+- O código do documento pode ter até 100 caracteres.
+
 ## [1.3.0] - 2026-10-05
 
 ### Adicionado

@@ -36,7 +36,9 @@ Ativos › Termos de Responsabilidade › [ NB-COLAB01            ▾ ]
 - **Termos de entrega e de devolução** com textos próprios. O texto aparece na tela antes da assinatura e é o mesmo que vai para o PDF.
 - **Tela de configuração para o administrador:**
   - nome da empresa, CNPJ e cidade por empresa (matriz e filiais);
-  - o texto dos termos editável, com o texto padrão já preenchido e PDF de exemplo antes de salvar.
+  - o texto dos termos editável, com o texto padrão já preenchido e PDF de exemplo antes de salvar;
+  - **código do documento** no formato da empresa, por exemplo `TR-2026-000124`, com numeração sequencial;
+  - **aparência:** logo, cor principal e rodapé do PDF.
 - **Dados do equipamento:**
   - fabricante, modelo, tipo, processador, memória, disco e sistema operacional vêm do inventário;
   - o técnico pode conferir ou completar cada campo, escolhendo entre os **valores já cadastrados no GLPI** ou digitando;
@@ -248,7 +250,42 @@ Em **Configurar › Plugins**, clique em **Asset Terms**. Administradores també
    - declaração;
    - compromissos, um por linha (na entrega saem numerados I, II, III...);
    - parágrafo final.
-4. Clique em **Ver PDF de exemplo** para conferir antes de salvar, e depois em **Salvar**.
+4. **Código do documento** (veja abaixo).
+5. **Aparência do documento:**
+   - **Logo:** PNG ou JPG de até 1 MB. Fica no topo do PDF, à esquerda, com até 5 x 1,6 cm, sem distorcer;
+   - **Cor principal:** cor do título e das seções do PDF;
+   - **Rodapé:** texto no pé de todas as páginas, como endereço, telefone ou site, ao lado do número da página.
+6. Clique em **Ver PDF de exemplo** para conferir antes de salvar, e depois em **Salvar**.
+
+### Código do documento
+
+Todo termo tem um código, que vai em três lugares: no PDF, no comentário do documento e no histórico do computador. Por padrão ele é aleatório, por exemplo `7AE8-6BAC-E7C2`. Para usar uma numeração da empresa, defina o **formato**:
+
+| Marcador | Vira |
+|---|---|
+| `{prefixo}` | o prefixo definido na tela, por exemplo `TR` |
+| `{ano}`, `{mes}`, `{dia}` | a data do termo (2026, 10, 05) |
+| `{seq}` | número sequencial, com a quantidade de dígitos definida (6 dígitos: `000124`) |
+| `{tipo}` | `ENT` na entrega, `DEV` na devolução |
+| `{aleatorio}` | código aleatório |
+
+Exemplos:
+
+| Formato | Prefixo | Código |
+|---|---|---|
+| `{aleatorio}` (padrão) | | `7AE8-6BAC-E7C2` |
+| `{prefixo}-{ano}-{seq}` | TR | `TR-2026-000124` |
+| `{tipo}-{ano}{mes}-{seq}` | | `ENT-202610-000124` |
+| `{prefixo}/{seq}` | GM | `GM/000124` |
+
+- **O formato precisa ter `{seq}` ou `{aleatorio}`,** para cada documento ter um código diferente.
+- **Próximo número:** deixe vazio para seguir a numeração. Para continuar uma numeração que você já usa no papel, preencha com o próximo número (por exemplo, 124).
+- **Recomeçar a numeração a cada ano:** ligado, o primeiro termo de cada ano é o 1. Desligado, a numeração não recomeça.
+- **Cada empresa tem a própria numeração.** Uma filial que herda a configuração da matriz usa a numeração da matriz.
+- **Nenhum número se repete:** dois termos criados ao mesmo tempo recebem números diferentes.
+- **O que consome número:**
+  - o termo arquivado, o link de assinatura, o envio por e-mail e o PDF para assinar no papel consomem um número;
+  - o PDF de exemplo da configuração não consome.
 
 O plugin já vem com o [texto padrão](#texto-padrão-do-termo). Para voltar a ele, use um dos botões:
 - **Preencher com o texto padrão:** troca só o texto do formulário, e você ainda salva;
@@ -360,6 +397,13 @@ Validado no GLPI 11.0.10 e no GLPI 10.0.28, com o navegador:
 | Filial sem configuração | usa a da matriz; com configuração própria, usa a dela ✅ |
 | Restaurar padrão | volta ao texto do plugin ✅ |
 | Usuário sem permissão de configuração | não acessa a tela ✅ |
+| Código padrão | aleatório, como nas versões anteriores ✅ |
+| Formato `{prefixo}-{ano}-{seq}` com próximo número 124 | primeiro termo TR-2026-000124, no PDF, no documento e no histórico ✅ |
+| 5 termos criados ao mesmo tempo | 125 a 129, sem repetir ✅ |
+| Formato sem `{seq}`/`{aleatorio}` ou com marcador desconhecido | recusado ✅ |
+| Sem prefixo | sem separador sobrando (ex.: `ENT202610-000130`) ✅ |
+| Logo, cor e rodapé | no PDF; logo que não é imagem é recusado; remover logo funciona ✅ |
+| PDF de exemplo | mostra código, logo, cor e rodapé sem consumir número ✅ |
 | Apóstrofo e `< > &` em textos e nomes (GLPI 10 e 11) | gravados e impressos como digitados ✅ |
 
 ---

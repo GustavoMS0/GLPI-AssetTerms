@@ -442,3 +442,23 @@
 .termo-equip-item .termo-hint {
     font-weight: 400;
 }
+
+/* Configuração: logo atual, campo largo e caixa de opção */
+.termo-logo-preview {
+    max-width: 200px;
+    max-height: 64px;
+    object-fit: contain;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 4px;
+    background: #fff;
+}
+
+.termo-config-wide {
+    grid-column: 1 / -1;
+}
+
+.termo-config-check {
+    font-weight: 400;
+    margin-bottom: 0;
+}

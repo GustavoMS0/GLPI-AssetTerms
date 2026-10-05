@@ -35,11 +35,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         Session::addMessageAfterRedirect('Configuração removida. Esta entidade passa a usar a da entidade acima ou o texto padrão.', true, INFO);
     } else {
         $data = PluginAssettermsConfig::collect($_POST);
-        if (is_string($data)) {
-            Session::addMessageAfterRedirect($data, false, ERROR);
+        $logo = PluginAssettermsConfig::readLogo($_FILES['logo'] ?? null);
+        if (is_string($data) || is_string($logo)) {
+            Session::addMessageAfterRedirect(is_string($data) ? $data : $logo, false, ERROR);
         } else {
-            PluginAssettermsConfig::save($eid, $data);
-            Session::addMessageAfterRedirect('Configuração salva. Os próximos termos já usam este texto.', true, INFO);
+            PluginAssettermsConfig::save($eid, $data, $logo);
+            if ($data['code_next'] !== null) {
+                PluginAssettermsConfig::setNextNumber(PluginAssettermsConfig::getEffective($eid), $data['code_next'], time());
+            }
+            Session::addMessageAfterRedirect('Configuração salva. Os próximos termos já usam estes dados.', true, INFO);
         }
     }
     Html::redirect($self . '?entities_id=' . $eid);
@@ -83,7 +87,7 @@ echo '</form>';
 // Formulário: empresa e textos (preenchido com o que vale hoje para a entidade)
 $t = $effective['texts'];
 ?>
-<form id="form-assetterms-config" class="termo-card" method="post" action="<?= $e($self) ?>"
+<form id="form-assetterms-config" class="termo-card" method="post" action="<?= $e($self) ?>" enctype="multipart/form-data"
       data-preview="<?= $e(PluginAssettermsTerm::webPath() . '/ajax/preview.php') ?>">
     <input type="hidden" name="entities_id" value="<?= $eid ?>">
 
@@ -106,6 +110,78 @@ $t = $effective['texts'];
             <input type="text" class="form-control" name="city" maxlength="255" value="<?= $e($effective['city']) ?>"
                    placeholder="Ex.: São Paulo">
             <small class="termo-hint">Usada em "Cidade, 5 de outubro de 2026." acima das assinaturas.</small>
+        </label>
+    </div>
+
+    <?php
+    $now     = time();
+    $proximo = PluginAssettermsConfig::peekNumber($effective, $now);
+    ?>
+    <h4 class="section-title mt-4"><i class="ti ti-hash"></i> Código do documento</h4>
+    <div class="termo-config-grid">
+        <label class="termo-equip-item">
+            <span>Formato</span>
+            <input type="text" class="form-control" name="code_format" maxlength="100" value="<?= $e($effective['code_format']) ?>"
+                   placeholder="{prefixo}-{ano}-{seq}">
+            <small class="termo-hint">Ex.: <code>{prefixo}-{ano}-{seq}</code> gera TR-<?= date('Y', $now) ?>-000124. Precisa ter <code>{seq}</code> ou <code>{aleatorio}</code>.</small>
+        </label>
+        <label class="termo-equip-item">
+            <span>Prefixo</span>
+            <input type="text" class="form-control" name="code_prefix" maxlength="20" value="<?= $e($effective['code_prefix']) ?>" placeholder="Ex.: TR">
+            <small class="termo-hint">Usado no lugar de <code>{prefixo}</code>.</small>
+        </label>
+        <label class="termo-equip-item">
+            <span>Dígitos do número</span>
+            <input type="number" class="form-control" name="code_digits" min="1" max="10" value="<?= (int) $effective['code_digits'] ?>">
+            <small class="termo-hint">Com 6, o número 124 sai como 000124.</small>
+        </label>
+        <label class="termo-equip-item">
+            <span>Próximo número</span>
+            <input type="number" class="form-control" name="code_next" min="1" placeholder="Hoje: <?= $proximo ?>">
+            <small class="termo-hint">Deixe vazio para seguir a numeração (próximo: <strong><?= $proximo ?></strong>). Preencha para começar ou continuar de outro número.</small>
+        </label>
+    </div>
+    <label class="termo-aceite termo-config-check mt-2">
+        <input type="checkbox" name="code_yearly" value="1" <?= $effective['code_yearly'] ? 'checked' : '' ?>>
+        Recomeçar a numeração do 1 a cada ano
+    </label>
+    <small class="termo-hint d-block">
+        Ao ligar ou desligar esta opção, a numeração passa a usar outro contador. Confira o <strong>Próximo número</strong> para não repetir códigos já usados.
+    </small>
+    <div class="termo-config-help">
+        <strong>Marcadores do código:</strong>
+        <?php foreach (PluginAssettermsConfig::CODE_TAGS as $tag => $label): ?>
+            <br><code><?= $e($tag) ?></code> = <?= $e($label) ?>
+        <?php endforeach; ?>
+        <br><strong>Exemplo com a configuração salva:</strong> <code id="termo-code-example"><?= $e(PluginAssettermsConfig::buildCode($effective, 'entrega', $now, false)) ?></code>
+        <br>O código vai no PDF, no comentário do documento e no histórico do computador.
+        <?php if ($effective['source'] !== null && $effective['source'] !== $eid): ?>
+            <br>A numeração é a de <strong><?= $e(Dropdown::getDropdownName('glpi_entities', (int) $effective['source'])) ?></strong>. Ao salvar uma configuração própria, esta entidade passa a ter numeração própria.
+        <?php endif; ?>
+    </div>
+
+    <h4 class="section-title mt-4"><i class="ti ti-palette"></i> Aparência do documento</h4>
+    <div class="termo-config-grid">
+        <div class="termo-equip-item">
+            <span>Logo</span>
+            <?php if ($effective['logo'] !== ''): ?>
+                <img class="termo-logo-preview" alt="Logo atual"
+                     src="data:<?= $e($effective['logo_mime']) ?>;base64,<?= base64_encode($effective['logo']) ?>">
+                <label class="termo-hint"><input type="checkbox" name="remove_logo" value="1"> Remover o logo</label>
+            <?php endif; ?>
+            <input type="file" class="form-control" name="logo" accept="image/png,image/jpeg">
+            <small class="termo-hint">PNG ou JPG de até 1 MB. Fica no topo do PDF, à esquerda, com até 5 x 1,6 cm.</small>
+        </div>
+        <label class="termo-equip-item">
+            <span>Cor principal</span>
+            <input type="color" class="form-control form-control-color" name="color" value="<?= $e($effective['color']) ?>">
+            <small class="termo-hint">Cor do título e das seções do PDF.</small>
+        </label>
+        <label class="termo-equip-item termo-config-wide">
+            <span>Rodapé</span>
+            <input type="text" class="form-control" name="footer" maxlength="300" value="<?= $e($effective['footer']) ?>"
+                   placeholder="Ex.: Rua Exemplo, 123 - Centro - São Paulo/SP - (11) 0000-0000 - www.empresa.com.br">
+            <small class="termo-hint">Aparece no pé de todas as páginas, ao lado do número da página.</small>
         </label>
     </div>
 

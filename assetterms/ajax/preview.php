@@ -29,6 +29,12 @@ if (is_string($data)) {
     return;
 }
 
+$logo = PluginAssettermsConfig::readLogo($_FILES['logo'] ?? null);
+if (is_string($logo)) {
+    $json(['success' => false, 'message' => $logo], 422);
+    return;
+}
+
 $eid = (int) ($_POST['entities_id'] ?? 0);
 $cfg = PluginAssettermsConfig::getEffective($eid);
 foreach (['company_name', 'company_doc', 'city'] as $field) {
@@ -36,7 +42,16 @@ foreach (['company_name', 'company_doc', 'city'] as $field) {
         $cfg[$field] = $data[$field];
     }
 }
-$cfg['texts'] = $data['texts'];
+foreach (['texts', 'code_format', 'code_prefix', 'code_digits', 'code_yearly', 'color', 'footer'] as $field) {
+    $cfg[$field] = $data[$field];
+}
+// Logo: o recém-escolhido no formulário, nenhum (se marcou remover) ou o atual
+if ($logo !== null) {
+    $cfg['logo']      = $logo['data'];
+    $cfg['logo_mime'] = $logo['mime'];
+} elseif ($data['remove_logo']) {
+    $cfg['logo'] = '';
+}
 
 $tipo  = ($_POST['preview_tipo'] ?? '') === 'devolucao' ? 'devolucao' : 'entrega';
 $dados = PluginAssettermsTerm::withDate([
@@ -45,7 +60,8 @@ $dados = PluginAssettermsTerm::withDate([
     'empresa'      => $cfg['company_name'],
     'cnpj'         => $cfg['company_doc'],
     'cidade'       => $cfg['city'],
-    'codigo'       => 'EXEM-PLO0-0000',
+    'codigo'       => PluginAssettermsConfig::buildCode($cfg, $tipo, time(), false),
+    'marca'        => $cfg,
     'tecnico'      => PluginAssettermsTerm::userName((int) Session::getLoginUserID()) ?: 'Técnico da TI',
     'tecnico_id'   => (int) Session::getLoginUserID(),
     'colaborador'  => ['id' => 0, 'nome' => 'Nome do Colaborador', 'matricula' => '000123', 'email' => 'colaborador@empresa.com.br'],

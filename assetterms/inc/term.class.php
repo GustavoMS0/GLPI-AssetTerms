@@ -215,7 +215,7 @@ class PluginAssettermsTerm extends CommonGLPI
             `users_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'colaborador que assina',
             `users_id_tech` int unsigned NOT NULL DEFAULT '0' COMMENT 'quem enviou',
             `type` varchar(20) NOT NULL DEFAULT 'entrega',
-            `code` varchar(20) NOT NULL DEFAULT '',
+            `code` varchar(100) NOT NULL DEFAULT '',
             `status` tinyint NOT NULL DEFAULT '0',
             `data` longtext COMMENT 'dados do termo no momento do envio (JSON)',
             `documents_id` int unsigned NOT NULL DEFAULT '0',
@@ -371,8 +371,7 @@ class PluginAssettermsTerm extends CommonGLPI
      */
     public static function buildData(Computer $computer, array $in, int $tech_id): array
     {
-        $cfg    = PluginAssettermsConfig::getEffective((int) $computer->fields['entities_id']);
-        $codigo = strtoupper(substr(hash('sha256', implode('|', [$computer->getID(), $in['tipo'], $in['users_id'], $tech_id, microtime(true), random_bytes(8)])), 0, 12));
+        $cfg = PluginAssettermsConfig::getEffective((int) $computer->fields['entities_id']);
 
         return [
             'tipo'         => $in['tipo'],
@@ -383,7 +382,8 @@ class PluginAssettermsTerm extends CommonGLPI
             'cidade'       => $cfg['city'],
             // Texto do momento em que o termo foi feito: quem assina pelo link vê exatamente este
             'texto'        => self::clausula($in['tipo'], $cfg),
-            'codigo'       => implode('-', str_split($codigo, 4)),
+            // Formato definido na configuração (padrão: aleatório); {seq} reserva o próximo número
+            'codigo'       => PluginAssettermsConfig::buildCode($cfg, $in['tipo'], time()),
             'tecnico'      => self::userName($tech_id) ?: 'TI',
             'tecnico_id'   => $tech_id,
             'colaborador'  => self::userData($in['users_id']) + ['id' => $in['users_id']],
@@ -657,7 +657,7 @@ class PluginAssettermsTerm extends CommonGLPI
     {
         $e = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $html = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2937;max-width:560px;">'
-            . '<h2 style="color:#1f3a5f;font-size:18px;">' . $e($title) . '</h2>';
+            . '<h2 style="color:' . PluginAssettermsConfig::DEFAULT_COLOR . ';font-size:18px;">' . $e($title) . '</h2>';
         foreach ($paragraphs as $p) {
             $html .= '<p style="line-height:1.5;">' . $p . '</p>';
         }
@@ -785,14 +785,34 @@ class PluginAssettermsTerm extends CommonGLPI
         $texto = self::textoFor($d);
         $devolucao = $d['tipo'] === 'devolucao';
 
-        // Sem o texto "Powered by TCPDF" que a biblioteca acrescenta ao fim do documento
+        // Aparência (logo, cor e rodapé) da configuração da empresa; o PDF de exemplo manda a do formulário
+        $marca = $d['marca'] ?? PluginAssettermsConfig::getEffective((int) ($d['entities_id'] ?? 0));
+        $cor   = $marca['color'] ?: PluginAssettermsConfig::DEFAULT_COLOR;
+
+        // Sem o texto "Powered by TCPDF" que a biblioteca acrescenta ao fim do documento,
+        // com o rodapé da empresa à esquerda e o número da página à direita
         $pdf = new class ('P', 'mm', 'A4', true, 'UTF-8') extends TCPDF {
+            public string $rodape = '';
+
             public function semCredito(): void
             {
                 $this->tcpdflink = false;
             }
+
+            public function Footer()
+            {
+                $this->SetY(-15);
+                $this->SetDrawColor(200, 200, 200);
+                $this->Line(18, $this->GetY(), 192, $this->GetY());
+                $this->SetY(-14);
+                $this->SetFont('dejavusans', '', 7);
+                $this->SetTextColor(110, 110, 110);
+                $this->MultiCell(150, 3.2, $this->rodape, 0, 'L', false, 0, 18);
+                $this->Cell(0, 3.2, $this->getAliasNumPage() . ' / ' . $this->getAliasNbPages(), 0, 0, 'R');
+            }
         };
         $pdf->semCredito();
+        $pdf->rodape = (string) $marca['footer'];
         $pdf->SetCreator('GLPI - Asset Terms');
         $pdf->SetAuthor($d['tecnico']);
         $pdf->SetTitle($texto['titulo'] . ' - ' . $d['equipamento']['nome']);
@@ -801,7 +821,7 @@ class PluginAssettermsTerm extends CommonGLPI
         $pdf->setFooterFont(['dejavusans', '', 7]);
         $pdf->SetMargins(18, 16, 18);
         $pdf->SetFooterMargin(10);
-        $pdf->SetAutoPageBreak(true, 18);
+        $pdf->SetAutoPageBreak(true, 20);
         $pdf->SetFont('dejavusans', '', 8.5);
         $pdf->setHtmlVSpace([
             'h2' => [0 => ['h' => 0, 'n' => 0], 1 => ['h' => 1, 'n' => 1]],
@@ -812,25 +832,32 @@ class PluginAssettermsTerm extends CommonGLPI
         ]);
         $pdf->AddPage();
 
+        // Logo no topo, à esquerda (até 50 x 16 mm, sem distorcer)
+        if (($marca['logo'] ?? '') !== '') {
+            $tipo_img = ($marca['logo_mime'] ?? '') === 'image/jpeg' ? 'JPG' : 'PNG';
+            $pdf->Image('@' . $marca['logo'], 18, 10, 50, 16, $tipo_img, '', '', true, 300, '', false, false, 0, 'LM');
+            $pdf->SetY(29);
+        }
+
         $th = 'style="background-color:#eef2f7;width:32%;"';
         $row = static fn (string $label, string $value) => "<tr><td {$th}><b>{$e($label)}</b></td><td style=\"width:68%;\">{$e($value)}</td></tr>";
 
         $eq = $d['equipamento'];
-        $html = '<h2 style="text-align:center;color:#1f3a5f;">' . $e(mb_strtoupper($texto['titulo'])) . '</h2>'
+        $html = '<h2 style="text-align:center;color:' . $cor . ';">' . $e(mb_strtoupper($texto['titulo'])) . '</h2>'
             . '<p style="text-align:center;color:#555;">' . $e($d['empresa']) . (($d['cnpj'] ?? '') !== '' ? ' &bull; CNPJ ' . $e($d['cnpj']) : '') . '</p>'
             . '<table cellpadding="3" style="border:0.3px solid #ccc;"><tr>'
             . '<td><b>Data:</b> ' . $e($d['data']) . '</td>'
             . '<td style="text-align:right;"><b>Código do documento:</b> ' . $e($d['codigo']) . '</td>'
             . '</tr></table>'
 
-            . '<h4 style="color:#1f3a5f;">1. Colaborador</h4>'
+            . '<h4 style="color:' . $cor . ';">1. Colaborador</h4>'
             . '<table cellpadding="3" border="0.3">'
             . $row('Nome', $or($d['colaborador']['nome']))
             . $row('Matrícula', $or($d['colaborador']['matricula']))
             . $row('E-mail', $or($d['colaborador']['email']))
             . '</table>'
 
-            . '<h4 style="color:#1f3a5f;">2. Equipamento</h4>'
+            . '<h4 style="color:' . $cor . ';">2. Equipamento</h4>'
             . '<table cellpadding="3" border="0.3">'
             . $row('Nome do ativo', $or($eq['nome']))
             . $row('Tipo', $or($eq['tipo']))
@@ -840,7 +867,7 @@ class PluginAssettermsTerm extends CommonGLPI
             . $row('Configuração', $or(implode(' | ', array_filter([$eq['cpu'], $eq['ram'] ? 'RAM ' . $eq['ram'] : '', $eq['disk'] ? 'Disco ' . $eq['disk'] : '', $eq['so']]))))
             . '</table>'
 
-            . '<h4 style="color:#1f3a5f;">3. Acessórios ' . ($devolucao ? 'devolvidos' : 'entregues') . '</h4>';
+            . '<h4 style="color:' . $cor . ';">3. Acessórios ' . ($devolucao ? 'devolvidos' : 'entregues') . '</h4>';
 
         if (empty($d['checklist'])) {
             $html .= '<p><i>Nenhum acessório.</i></p>';
@@ -852,10 +879,10 @@ class PluginAssettermsTerm extends CommonGLPI
             $html .= '</ul>';
         }
 
-        $html .= '<h4 style="color:#1f3a5f;">4. Observações sobre o estado do equipamento</h4>'
+        $html .= '<h4 style="color:' . $cor . ';">4. Observações sobre o estado do equipamento</h4>'
             . '<p>' . ($d['observacoes'] !== '' ? nl2br($e($d['observacoes'])) : '<i>Sem observações.</i>') . '</p>'
 
-            . '<h4 style="color:#1f3a5f;">5. Declaração</h4>'
+            . '<h4 style="color:' . $cor . ';">5. Declaração</h4>'
             . '<p style="text-align:justify;">' . $e($texto['declaracao']) . '</p>';
 
         if ($devolucao) {
