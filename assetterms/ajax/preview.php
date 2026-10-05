@@ -42,7 +42,7 @@ foreach (['company_name', 'company_doc', 'city'] as $field) {
         $cfg[$field] = $data[$field];
     }
 }
-foreach (['texts', 'code_format', 'code_prefix', 'code_digits', 'code_yearly', 'color', 'footer'] as $field) {
+foreach (['texts', 'code_format', 'code_prefix', 'code_digits', 'code_yearly', 'color', 'footer', 'doc_control'] as $field) {
     $cfg[$field] = $data[$field];
 }
 // Logo: o recém-escolhido no formulário, nenhum (se marcou remover) ou o atual

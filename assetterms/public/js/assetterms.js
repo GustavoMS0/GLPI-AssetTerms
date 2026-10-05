@@ -444,6 +444,16 @@
             });
         });
 
+        // Campos do cabeçalho de controle de documentos só aparecem no modelo "controle"
+        const layout = form.querySelector('#dc_layout');
+        if (layout) {
+            layout.addEventListener('change', function () {
+                form.querySelectorAll('[data-dc]').forEach(function (el) {
+                    el.hidden = el.dataset.dc !== layout.value;
+                });
+            });
+        }
+
         // Volta os campos de texto para o padrão do plugin (só no formulário; salva quando clicar em Salvar)
         const defaults = JSON.parse(document.getElementById('assetterms-default-texts').textContent);
         form.querySelector('.termo-config-default').addEventListener('click', function () {

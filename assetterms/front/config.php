@@ -185,6 +185,31 @@ $t = $effective['texts'];
         </label>
     </div>
 
+    <?php $dc = $effective['doc_control']; ?>
+    <h4 class="section-title mt-4"><i class="ti ti-layout-navbar"></i> Cabeçalho e rodapé</h4>
+    <div class="termo-config-grid">
+        <label class="termo-equip-item termo-config-wide">
+            <span>Modelo do cabeçalho</span>
+            <select name="dc_layout" id="dc_layout" class="form-select">
+                <option value="simples" <?= $dc['layout'] === 'simples' ? 'selected' : '' ?>>Simples: logo, título e nome da empresa na primeira página</option>
+                <option value="controle" <?= $dc['layout'] === 'controle' ? 'selected' : '' ?>>Controle de documentos (ISO): tabela com tipo, código, título, revisão e datas em todas as páginas</option>
+            </select>
+            <small class="termo-hint">
+                No modelo de controle, o cabeçalho repete em todas as páginas, com o logo à esquerda e "Página X de Y",
+                e o rodapé mostra quem elaborou e quem aprovou o formulário.
+            </small>
+        </label>
+    </div>
+    <div class="termo-config-grid mt-2" data-dc="controle" <?= $dc['layout'] === 'controle' ? '' : 'hidden' ?>>
+        <?php foreach (PluginAssettermsConfig::DOC_CONTROL_FIELDS as $field => [$label, $placeholder, $max]): ?>
+            <label class="termo-equip-item <?= $field === 'titulo' ? 'termo-config-wide' : '' ?>">
+                <span><?= $e($label) ?></span>
+                <input type="text" class="form-control" name="dc_<?= $field ?>" maxlength="<?= (int) $max ?>"
+                       value="<?= $e($dc[$field]) ?>" placeholder="<?= $e($placeholder) ?>">
+            </label>
+        <?php endforeach; ?>
+    </div>
+
     <div class="termo-config-help">
         <strong>Marcadores:</strong>
         <?php foreach (PluginAssettermsConfig::PLACEHOLDERS as $tag => $label): ?>

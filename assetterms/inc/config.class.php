@@ -52,7 +52,34 @@ class PluginAssettermsConfig extends CommonGLPI
         'logo_mime'   => "varchar(20) NOT NULL DEFAULT ''",
         'color'       => "varchar(7) NOT NULL DEFAULT ''",
         'footer'      => "varchar(300) NOT NULL DEFAULT ''",
+        // 1.5.0: cabeçalho e rodapé de controle de documentos (ISO)
+        'doc_control' => "text COMMENT 'cabeçalho de controle de documento (JSON)'",
     ];
+
+    /**
+     * Cabeçalho "controle de documentos" (tabela com tipo, código do formulário, revisão e datas,
+     * repetida em todas as páginas) e rodapé com quem elaborou e aprovou. layout: simples | controle
+     */
+    public const DOC_CONTROL_FIELDS = [
+        'tipo'            => ['Tipo', 'FORMULÁRIO', 40],
+        'codigo'          => ['Código do formulário', 'Ex.: FTIN 7.5.3.01', 40],
+        'titulo'          => ['Título no cabeçalho', 'Vazio = título do termo', 200],
+        'revisao'         => ['Nº revisão', 'Ex.: 06', 20],
+        'emissao'         => ['Data de emissão', 'dd/mm/aaaa', 20],
+        'ultima_revisao'  => ['Última revisão', 'dd/mm/aaaa', 20],
+        'proxima_revisao' => ['Próxima revisão', 'dd/mm/aaaa', 20],
+        'elaborado'       => ['Elaborado e revisado por', 'Nome', 100],
+        'aprovado'        => ['Aprovado por', 'Nome', 100],
+    ];
+
+    public static function defaultDocControl(): array
+    {
+        $dc = ['layout' => 'simples'];
+        foreach (array_keys(self::DOC_CONTROL_FIELDS) as $field) {
+            $dc[$field] = $field === 'tipo' ? 'FORMULÁRIO' : '';
+        }
+        return $dc;
+    }
 
     public static function installSchema(): void
     {
@@ -213,6 +240,10 @@ class PluginAssettermsConfig extends CommonGLPI
             'logo_mime'    => (string) ($own['logo_mime'] ?? ''),
             'color'        => preg_match('/^#[0-9a-f]{6}$/i', (string) ($own['color'] ?? '')) ? strtolower($own['color']) : self::DEFAULT_COLOR,
             'footer'       => (string) ($own['footer'] ?? ''),
+            'doc_control'  => array_merge(self::defaultDocControl(), array_intersect_key(
+                (array) (json_decode((string) ($own['doc_control'] ?? ''), true) ?: []),
+                self::defaultDocControl()
+            )),
         ];
     }
 
@@ -407,7 +438,18 @@ class PluginAssettermsConfig extends CommonGLPI
             'color'        => $color !== '' ? $color : self::DEFAULT_COLOR,
             'footer'       => mb_substr(trim(preg_replace('/\s+/u', ' ', (string) ($post['footer'] ?? ''))), 0, 300),
             'remove_logo'  => !empty($post['remove_logo']),
+            'doc_control'  => self::collectDocControl($post),
         ];
+    }
+
+    /** Campos do cabeçalho de controle de documentos (prefixo dc_ no formulário) */
+    private static function collectDocControl(array $post): array
+    {
+        $dc = ['layout' => ($post['dc_layout'] ?? '') === 'controle' ? 'controle' : 'simples'];
+        foreach (self::DOC_CONTROL_FIELDS as $field => [, , $max]) {
+            $dc[$field] = mb_substr(trim(preg_replace('/\s+/u', ' ', (string) ($post['dc_' . $field] ?? ''))), 0, $max);
+        }
+        return $dc;
     }
 
     /**
@@ -430,6 +472,7 @@ class PluginAssettermsConfig extends CommonGLPI
             'code_yearly'  => $data['code_yearly'] ? 1 : 0,
             'color'        => $data['color'],
             'footer'       => $data['footer'],
+            'doc_control'  => json_encode($data['doc_control'], JSON_UNESCAPED_UNICODE),
             'date_mod'     => date('Y-m-d H:i:s'),
         ];
         if ($logo !== null) {

@@ -785,22 +785,107 @@ class PluginAssettermsTerm extends CommonGLPI
         $texto = self::textoFor($d);
         $devolucao = $d['tipo'] === 'devolucao';
 
-        // Aparência (logo, cor e rodapé) da configuração da empresa; o PDF de exemplo manda a do formulário
-        $marca = $d['marca'] ?? PluginAssettermsConfig::getEffective((int) ($d['entities_id'] ?? 0));
-        $cor   = $marca['color'] ?: PluginAssettermsConfig::DEFAULT_COLOR;
+        // Aparência (logo, cor, rodapé e cabeçalho) da configuração da empresa; o PDF de exemplo manda a do formulário
+        $marca    = $d['marca'] ?? PluginAssettermsConfig::getEffective((int) ($d['entities_id'] ?? 0));
+        $cor      = $marca['color'] ?: PluginAssettermsConfig::DEFAULT_COLOR;
+        $layout   = ($marca['doc_control'] ?? [])['layout'] ?? 'simples';
+        $controle = $layout === 'controle' ? $marca['doc_control'] : null;
+        $logo     = (string) ($marca['logo'] ?? '');
+        $logoType = ($marca['logo_mime'] ?? '') === 'image/jpeg' ? 'JPG' : 'PNG';
 
-        // Sem o texto "Powered by TCPDF" que a biblioteca acrescenta ao fim do documento,
-        // com o rodapé da empresa à esquerda e o número da página à direita
+        // Sem o texto "Powered by TCPDF" que a biblioteca acrescenta ao fim do documento.
+        // Layout "simples": logo e título na primeira página, rodapé com o número da página.
+        // Layout "controle": tabela de controle de documentos em todas as páginas (tipo, código do
+        // formulário, título, revisão, datas e "Página X de Y") e rodapé com quem elaborou e aprovou.
         $pdf = new class ('P', 'mm', 'A4', true, 'UTF-8') extends TCPDF {
             public string $rodape = '';
+            public ?array $controle = null;
+            public string $logo = '';
+            public string $logoType = 'PNG';
+            public string $tituloCabecalho = '';
 
             public function semCredito(): void
             {
                 $this->tcpdflink = false;
             }
 
+            /** Célula do cabeçalho: rótulo pequeno em cima e valor em negrito embaixo */
+            private function celula(float $x, float $y, float $w, float $h, string $rotulo, string $valor, string $align = 'L', float $tam = 9): void
+            {
+                $e = static fn ($v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
+                // Diminui a fonte do valor até caber em uma linha (a altura das linhas é fixa)
+                $this->SetFont('dejavusans', 'B', $tam);
+                while ($tam > 6 && $this->GetStringWidth($valor) > $w - 3) {
+                    $tam -= 0.5;
+                    $this->SetFont('dejavusans', 'B', $tam);
+                }
+                $html = '<span style="font-size:6.5pt;color:#333333;">' . $e($rotulo) . '</span><br>'
+                    . '<b style="font-size:' . $tam . 'pt;">' . $e($valor) . '</b>';
+                $this->writeHTMLCell($w, $h, $x, $y, $html, 1, 0, false, true, $align, true);
+            }
+
+            public function Header()
+            {
+                if ($this->controle === null) {
+                    return;
+                }
+                $dc = $this->controle;
+                // Mesmas proporções das colunas do modelo em Word (largura útil de 174 mm)
+                $w    = [29.6, 41.8, 39.5, 34.8, 28.3];
+                $h    = 9.5;
+                $x0   = 18;
+                $y0   = 10;
+                $x1   = $x0 + $w[0];
+                $span = $w[1] + $w[2] + $w[3];
+                $x5   = $x1 + $span;
+
+                $this->SetFont('dejavusans', '', 8);
+                $this->SetTextColor(0, 0, 0);
+                $this->SetDrawColor(0, 0, 0);
+                $this->SetLineWidth(0.2);
+
+                // Logo ocupando as três linhas
+                $this->Rect($x0, $y0, $w[0], $h * 3);
+                if ($this->logo !== '') {
+                    $this->Image('@' . $this->logo, $x0 + 1.5, $y0 + 1.5, $w[0] - 3, $h * 3 - 3, $this->logoType, '', '', true, 300, '', false, false, 0, 'CM');
+                }
+
+                $titulo = $this->tituloCabecalho;
+                $this->celula($x1, $y0, $span, $h, 'Tipo:', (string) $dc['tipo']);
+                $this->celula($x5, $y0, $w[4], $h, 'Código:', (string) $dc['codigo'], 'C');
+                $this->celula($x1, $y0 + $h, $span, $h, 'Título:', $titulo);
+                $this->celula($x5, $y0 + $h, $w[4], $h, 'Nº Revisão:', (string) $dc['revisao'], 'C');
+                $this->celula($x1, $y0 + 2 * $h, $w[1], $h, 'Data de emissão:', (string) $dc['emissao'], 'C');
+                $this->celula($x1 + $w[1], $y0 + 2 * $h, $w[2], $h, 'Última revisão:', (string) $dc['ultima_revisao'], 'C');
+                $this->celula($x1 + $w[1] + $w[2], $y0 + 2 * $h, $w[3], $h, 'Próxima revisão:', (string) $dc['proxima_revisao'], 'C');
+
+                // "Página X de Y": os números só existem no fim, então a centralização usa a largura de
+                // um texto equivalente (o TCPDF centralizaria pelo marcador, que é mais largo)
+                $this->Rect($x5, $y0 + 2 * $h, $w[4], $h);
+                $this->SetFont('dejavusans', 'B', 9);
+                $largura = $this->GetStringWidth('Página 9 de 9');
+                $this->SetXY($x5 + max(1, ($w[4] - $largura) / 2), $y0 + 2 * $h);
+                $this->Cell($largura, $h, 'Página ' . $this->getAliasNumPage() . ' de ' . $this->getAliasNbPages(), 0, 0, 'L');
+            }
+
             public function Footer()
             {
+                if ($this->controle !== null) {
+                    $partes = array_filter([
+                        $this->controle['elaborado'] !== '' ? 'Elaborado e revisado por: ' . $this->controle['elaborado'] : '',
+                        $this->controle['aprovado'] !== '' ? 'Aprovado por: ' . $this->controle['aprovado'] : '',
+                    ]);
+                    $this->SetY(-14);
+                    $this->SetFont('dejavusans', '', 8);
+                    $this->SetTextColor(0, 0, 0);
+                    $this->Cell(0, 4, implode('          ', $partes), 0, 1, 'C');
+                    if ($this->rodape !== '') {
+                        $this->SetFont('dejavusans', '', 6.5);
+                        $this->SetTextColor(110, 110, 110);
+                        $this->Cell(0, 3.5, $this->rodape, 0, 0, 'C');
+                    }
+                    return;
+                }
                 $this->SetY(-15);
                 $this->SetDrawColor(200, 200, 200);
                 $this->Line(18, $this->GetY(), 192, $this->GetY());
@@ -812,14 +897,19 @@ class PluginAssettermsTerm extends CommonGLPI
             }
         };
         $pdf->semCredito();
-        $pdf->rodape = (string) $marca['footer'];
+        $pdf->rodape          = (string) $marca['footer'];
+        $pdf->controle        = $controle;
+        $pdf->logo            = $logo;
+        $pdf->logoType        = $logoType;
+        $pdf->tituloCabecalho = $controle !== null ? (($controle['titulo'] ?? '') !== '' ? $controle['titulo'] : mb_strtoupper($texto['titulo'])) : '';
         $pdf->SetCreator('GLPI - Asset Terms');
         $pdf->SetAuthor($d['tecnico']);
         $pdf->SetTitle($texto['titulo'] . ' - ' . $d['equipamento']['nome']);
-        $pdf->setPrintHeader(false);
+        $pdf->setPrintHeader($controle !== null);
         $pdf->setPrintFooter(true);
         $pdf->setFooterFont(['dejavusans', '', 7]);
-        $pdf->SetMargins(18, 16, 18);
+        $pdf->SetMargins(18, $controle !== null ? 42 : 16, 18);
+        $pdf->SetHeaderMargin(10);
         $pdf->SetFooterMargin(10);
         $pdf->SetAutoPageBreak(true, 20);
         $pdf->SetFont('dejavusans', '', 8.5);
@@ -832,10 +922,9 @@ class PluginAssettermsTerm extends CommonGLPI
         ]);
         $pdf->AddPage();
 
-        // Logo no topo, à esquerda (até 50 x 16 mm, sem distorcer)
-        if (($marca['logo'] ?? '') !== '') {
-            $tipo_img = ($marca['logo_mime'] ?? '') === 'image/jpeg' ? 'JPG' : 'PNG';
-            $pdf->Image('@' . $marca['logo'], 18, 10, 50, 16, $tipo_img, '', '', true, 300, '', false, false, 0, 'LM');
+        // Layout simples: logo no topo, à esquerda (até 50 x 16 mm, sem distorcer)
+        if ($controle === null && $logo !== '') {
+            $pdf->Image('@' . $logo, 18, 10, 50, 16, $logoType, '', '', true, 300, '', false, false, 0, 'LM');
             $pdf->SetY(29);
         }
 
@@ -843,8 +932,11 @@ class PluginAssettermsTerm extends CommonGLPI
         $row = static fn (string $label, string $value) => "<tr><td {$th}><b>{$e($label)}</b></td><td style=\"width:68%;\">{$e($value)}</td></tr>";
 
         $eq = $d['equipamento'];
-        $html = '<h2 style="text-align:center;color:' . $cor . ';">' . $e(mb_strtoupper($texto['titulo'])) . '</h2>'
-            . '<p style="text-align:center;color:#555;">' . $e($d['empresa']) . (($d['cnpj'] ?? '') !== '' ? ' &bull; CNPJ ' . $e($d['cnpj']) : '') . '</p>'
+        // No layout de controle, o título e a empresa já estão no cabeçalho
+        $html = ($controle === null
+                ? '<h2 style="text-align:center;color:' . $cor . ';">' . $e(mb_strtoupper($texto['titulo'])) . '</h2>'
+                    . '<p style="text-align:center;color:#555;">' . $e($d['empresa']) . (($d['cnpj'] ?? '') !== '' ? ' &bull; CNPJ ' . $e($d['cnpj']) : '') . '</p>'
+                : '')
             . '<table cellpadding="3" style="border:0.3px solid #ccc;"><tr>'
             . '<td><b>Data:</b> ' . $e($d['data']) . '</td>'
             . '<td style="text-align:right;"><b>Código do documento:</b> ' . $e($d['codigo']) . '</td>'

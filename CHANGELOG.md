@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0] - 2026-10-05
+
+### Adicionado
+- **Modelo de cabeçalho "Controle de documentos" (ISO):**
+  - tabela em todas as páginas com logo, tipo, código do formulário, título, nº da revisão, datas de emissão, última e próxima revisão e "Página X de Y";
+  - rodapé com "Elaborado e revisado por" e "Aprovado por";
+  - configurável por empresa, na tela de configuração;
+  - o modelo "Simples" continua como padrão.
+- Os campos do cabeçalho diminuem a fonte para caber numa linha.
+
 ## [1.4.0] - 2026-10-05
 
 ### Adicionado

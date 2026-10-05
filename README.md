@@ -38,7 +38,8 @@ Ativos › Termos de Responsabilidade › [ NB-COLAB01            ▾ ]
   - nome da empresa, CNPJ e cidade por empresa (matriz e filiais);
   - o texto dos termos editável, com o texto padrão já preenchido e PDF de exemplo antes de salvar;
   - **código do documento** no formato da empresa, por exemplo `TR-2026-000124`, com numeração sequencial;
-  - **aparência:** logo, cor principal e rodapé do PDF.
+  - **aparência:** logo, cor principal e rodapé do PDF;
+  - **cabeçalho de controle de documentos (ISO)**, com tipo, código, revisão e datas do formulário em todas as páginas.
 - **Dados do equipamento:**
   - fabricante, modelo, tipo, processador, memória, disco e sistema operacional vêm do inventário;
   - o técnico pode conferir ou completar cada campo, escolhendo entre os **valores já cadastrados no GLPI** ou digitando;
@@ -191,6 +192,16 @@ Ao assinar:
 - o usuário e o status do equipamento são atualizados;
 - com o e-mail configurado, o colaborador recebe uma cópia em PDF e quem enviou recebe um aviso.
 
+**Quem recebe o PDF assinado por e-mail** (é o mesmo PDF arquivado, com o cabeçalho e o rodapé configurados):
+
+| Como foi assinado | Colaborador | Quem enviou o termo |
+|---|---|---|
+| Pelo link (enviado por e-mail ou copiado) | recebe a cópia em PDF | recebe o aviso com o PDF |
+| Na tela, na hora (**Gerar e arquivar termo**) | não recebe | — |
+| PDF para assinar no papel | não recebe | — |
+
+Os envios só acontecem com o e-mail do GLPI configurado e o e-mail do colaborador cadastrado. Em qualquer caso, o PDF fica na aba **Documentos** do computador.
+
 Enquanto não é assinado, o termo aparece em **Aguardando assinatura**, na aba e no menu, com os botões:
 - **Copiar link:** para mandar de novo por qualquer meio;
 - **Reenviar:** por e-mail, para o e-mail atual do colaborador;
@@ -255,7 +266,32 @@ Em **Configurar › Plugins**, clique em **Asset Terms**. Administradores també
    - **Logo:** PNG ou JPG de até 1 MB. Fica no topo do PDF, à esquerda, com até 5 x 1,6 cm, sem distorcer;
    - **Cor principal:** cor do título e das seções do PDF;
    - **Rodapé:** texto no pé de todas as páginas, como endereço, telefone ou site, ao lado do número da página.
-6. Clique em **Ver PDF de exemplo** para conferir antes de salvar, e depois em **Salvar**.
+6. **Cabeçalho e rodapé:** escolha o modelo (veja abaixo).
+7. Clique em **Ver PDF de exemplo** para conferir antes de salvar, e depois em **Salvar**.
+
+### Cabeçalho e rodapé: modelo de controle de documentos (ISO)
+
+Para empresas que controlam formulários por código e revisão, como na ISO 9001, escolha **Controle de documentos** em **Modelo do cabeçalho**. Todas as páginas do PDF passam a ter esta tabela:
+
+| | | | | |
+|---|---|---|---|---|
+| **[logo]** (ocupa as 3 linhas) | Tipo: **FORMULÁRIO** | | | Código: **FTIN 7.5.3.01** |
+| | Título: **TERMO DE RESPONSABILIDADE – EQUIPAMENTOS TECNOLÓGICOS** | | | Nº Revisão: **06** |
+| | Data de emissão: **09/01/2011** | Última revisão: **24/08/2026** | Próxima revisão: **24/08/2029** | **Página 1 de 2** |
+
+O rodapé mostra **"Elaborado e revisado por: …"** e **"Aprovado por: …"**.
+
+| Campo | Observação |
+|---|---|
+| Tipo, Código do formulário, Nº revisão | o **Código** aqui é o do formulário (fixo). Cada termo continua com o seu [código do documento](#código-do-documento), logo abaixo do cabeçalho |
+| Título no cabeçalho | vazio = título do termo (entrega ou devolução), em maiúsculas |
+| Datas de emissão, última e próxima revisão | texto livre, por exemplo `24/08/2026` |
+| Elaborado e revisado por, Aprovado por | vão no rodapé de todas as páginas |
+
+- **"Página X de Y"** é preenchido sozinho.
+- **Textos longos:** a fonte de cada campo diminui para caber numa linha.
+- **No corpo do termo:** o título e o nome da empresa não se repetem, porque já estão no cabeçalho.
+- **Volta ao modelo Simples:** guarda os dados do cabeçalho para usar depois.
 
 ### Código do documento
 
@@ -404,6 +440,8 @@ Validado no GLPI 11.0.10 e no GLPI 10.0.28, com o navegador:
 | Sem prefixo | sem separador sobrando (ex.: `ENT202610-000130`) ✅ |
 | Logo, cor e rodapé | no PDF; logo que não é imagem é recusado; remover logo funciona ✅ |
 | PDF de exemplo | mostra código, logo, cor e rodapé sem consumir número ✅ |
+| Cabeçalho de controle de documentos (modelo FTIN 7.5.3.01) | tabela com logo, tipo, código, título, revisão, datas e "Página X de Y" em todas as páginas; rodapé com elaborado e aprovado ✅ |
+| PDF assinado pelo link | chega por e-mail ao colaborador com o mesmo cabeçalho e rodapé ✅ |
 | Apóstrofo e `< > &` em textos e nomes (GLPI 10 e 11) | gravados e impressos como digitados ✅ |
 
 ---
