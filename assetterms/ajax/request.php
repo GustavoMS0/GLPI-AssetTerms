@@ -18,6 +18,7 @@ global $DB;
 
 Session::checkLoginUser();
 $json = [PluginAssettermsTerm::class, 'json'];
+PluginAssettermsTerm::normalizeInput();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     $json(['success' => false, 'message' => 'Método não permitido.'], 405);

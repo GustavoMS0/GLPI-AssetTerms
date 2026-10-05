@@ -53,7 +53,7 @@ if ($req === null || (int) $req['users_id'] !== $me) {
 } else {
     $d     = $req['data'];
     $eq    = $d['equipamento'];
-    $texto = PluginAssettermsTerm::clausula($d['tipo'], $d['empresa']);
+    $texto = PluginAssettermsTerm::textoFor($d);
     $acao  = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
     ?>
     <div class="termo-card termo-header-card">

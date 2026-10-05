@@ -29,6 +29,7 @@ global $CFG_GLPI, $DB;
 
 Session::checkLoginUser();
 $json = [PluginAssettermsTerm::class, 'json'];
+PluginAssettermsTerm::normalizeInput();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     $json(['success' => false, 'message' => 'Método não permitido.'], 405);
@@ -53,21 +54,46 @@ if (($_POST['tipo_termo'] ?? '') === 'status') {
         $json(['success' => false, 'message' => 'Escolha o novo status.'], 422);
         return;
     }
-    $remover = ($_POST['usuario_acao'] ?? '') === 'remover';
-    $obs     = mb_substr(trim((string) ($_POST['observacoes'] ?? '')), 0, 2000);
-    $update  = ['id' => $cid, 'states_id' => $state_id];
-    if ($remover) {
+    $acao   = $_POST['usuario_acao'] ?? 'manter';
+    $obs    = mb_substr(trim((string) ($_POST['observacoes'] ?? '')), 0, 2000);
+    $update = ['id' => $cid, 'states_id' => $state_id];
+    $quem   = '';
+
+    if ($acao === 'remover') {
+        // Sem ninguém com o equipamento: limpa também o nome informado (Usuário alternativo)
         $update['users_id'] = 0;
+        $update['contact']  = '';
+        $quem = ' e usuário removido';
+    } elseif ($acao === 'mover') {
+        $novo = (int) ($_POST['users_id_status'] ?? 0);
+        $nome = mb_substr(trim(preg_replace('/\s+/u', ' ', (string) ($_POST['nome_status'] ?? ''))), 0, 255);
+        $novo_nome = $novo > 0 ? PluginAssettermsTerm::userName($novo) : '';
+        if ($novo > 0 && $novo_nome === '') {
+            $json(['success' => false, 'message' => 'Usuário do GLPI não encontrado.'], 422);
+            return;
+        }
+        if ($novo_nome === '' && $nome === '') {
+            $json(['success' => false, 'message' => 'Para mover, escolha o novo usuário do GLPI ou digite o nome de preferência.'], 422);
+            return;
+        }
+        $update['users_id'] = $novo;
+        $update['contact']  = $nome;
+        $quem = ' e equipamento movido para ' . ($novo_nome !== '' ? $novo_nome . ($nome !== '' && $nome !== $novo_nome ? " ({$nome})" : '') : "{$nome} (sem usuário no GLPI)");
+    }
+
+    if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
+        // O GLPI 10 espera a entrada escapada, como vem de um formulário
+        $update = Toolbox::addslashes_deep($update);
     }
     $computer->update($update);
     $status = (string) Dropdown::getDropdownName('glpi_states', $state_id);
-    Log::history($cid, 'Computer', [0, '', "Ciclo de vida: status alterado para {$status}" . ($remover ? ' e usuário removido' : '') . ', sem termo.' . ($obs !== '' ? " Observação: {$obs}" : '')], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    Log::history($cid, 'Computer', [0, '', "Ciclo de vida: status alterado para {$status}{$quem}, sem termo." . ($obs !== '' ? " Observação: {$obs}" : '')], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
     $computer->getFromDB($cid);
     $json([
         'success'     => true,
-        'message'     => "Status alterado para {$status}. A mudança ficou registrada no histórico do equipamento.",
+        'message'     => "Status alterado para {$status}{$quem}. A mudança ficou registrada no histórico do equipamento.",
         'status_name' => $status,
-        'user_name'   => PluginAssettermsTerm::userName((int) $computer->fields['users_id']) ?: 'Nenhum colaborador vinculado',
+        'user_name'   => PluginAssettermsTerm::holderName($computer),
     ]);
     return;
 }

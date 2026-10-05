@@ -58,6 +58,20 @@ class PluginAssettermsTerm extends CommonGLPI
         return $name !== '' ? $name : (string) $user->fields['name'];
     }
 
+    /**
+     * Quem está com o equipamento: o usuário do GLPI ou, sem usuário, o nome informado
+     * no campo "Usuário alternativo" do computador.
+     */
+    public static function holderName(Computer $computer): string
+    {
+        $user = self::userName((int) ($computer->fields['users_id'] ?? 0));
+        if ($user !== '') {
+            return $user;
+        }
+        $contact = trim((string) ($computer->fields['contact'] ?? ''));
+        return $contact !== '' ? $contact . ' (sem usuário no GLPI)' : 'Nenhum colaborador vinculado';
+    }
+
     /** Dados do colaborador usados no termo */
     public static function userData(int $users_id): array
     {
@@ -242,6 +256,18 @@ class PluginAssettermsTerm extends CommonGLPI
         return $values;
     }
 
+    /**
+     * O GLPI 10 entrega $_POST já escapado para SQL e com < > & convertidos em entidades HTML.
+     * Os endpoints do plugin trabalham com o texto original (que vai para o PDF, o JSON e a tela)
+     * e escapam só na hora de gravar. No GLPI 11, $_POST já chega original.
+     */
+    public static function normalizeInput(): void
+    {
+        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<') && class_exists(\Glpi\Toolbox\Sanitizer::class)) {
+            $_POST = \Glpi\Toolbox\Sanitizer::unsanitize($_POST);
+        }
+    }
+
     /** Responde em JSON. Quem chama encerra o script com return. */
     public static function json(array $data, int $code = 200): void
     {
@@ -345,16 +371,18 @@ class PluginAssettermsTerm extends CommonGLPI
      */
     public static function buildData(Computer $computer, array $in, int $tech_id): array
     {
-        $entity = new Entity();
-        $entity->getFromDB((int) $computer->fields['entities_id']);
+        $cfg    = PluginAssettermsConfig::getEffective((int) $computer->fields['entities_id']);
         $codigo = strtoupper(substr(hash('sha256', implode('|', [$computer->getID(), $in['tipo'], $in['users_id'], $tech_id, microtime(true), random_bytes(8)])), 0, 12));
 
         return [
             'tipo'         => $in['tipo'],
             'computers_id' => (int) $computer->getID(),
             'entities_id'  => (int) $computer->fields['entities_id'],
-            'empresa'      => (string) ($entity->fields['name'] ?? ''),
-            'cidade'       => trim((string) ($entity->fields['town'] ?? '')),
+            'empresa'      => $cfg['company_name'],
+            'cnpj'         => $cfg['company_doc'],
+            'cidade'       => $cfg['city'],
+            // Texto do momento em que o termo foi feito: quem assina pelo link vê exatamente este
+            'texto'        => self::clausula($in['tipo'], $cfg),
             'codigo'       => implode('-', str_split($codigo, 4)),
             'tecnico'      => self::userName($tech_id) ?: 'TI',
             'tecnico_id'   => $tech_id,
@@ -728,49 +756,19 @@ class PluginAssettermsTerm extends CommonGLPI
     // --------------------------------------------------------- Texto do termo
 
     /**
-     * Texto do termo. É o mesmo na tela e no PDF.
+     * Texto do termo para a configuração da empresa (ver PluginAssettermsConfig). É o mesmo na tela e no PDF.
      *
      * @return array{titulo: string, declaracao: string, compromissos: string[], ciencia: string}
      */
-    public static function clausula(string $tipo, string $empresa): array
+    public static function clausula(string $tipo, array $cfg): array
     {
-        $empresa = $empresa !== '' ? $empresa : 'a empresa';
+        return PluginAssettermsConfig::render($cfg, $tipo);
+    }
 
-        if ($tipo === 'devolucao') {
-            return [
-                'titulo'       => 'Termo de Devolução de Equipamento',
-                'declaracao'   => "Declaro que, nesta data, devolvi à {$empresa} o equipamento e os acessórios descritos neste termo, "
-                    . 'conferidos na presença do(a) responsável pela TI.',
-                'compromissos' => [
-                    'O estado do equipamento e de cada acessório na devolução é o registrado no campo de observações deste termo.',
-                    'Acessórios não listados como devolvidos foram considerados ausentes na conferência.',
-                    'Removi ou entreguei à TI os arquivos pessoais que mantinha no equipamento, quando havia.',
-                ],
-                'ciencia'      => 'Estou ciente de que os dados armazenados no equipamento poderão ser apagados para a sua reutilização, '
-                    . 'conforme a Política de Segurança da Informação e a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), '
-                    . 'e de que danos ou ausências registrados neste termo serão tratados conforme o termo de entrega e as normas internas.',
-            ];
-        }
-
-        return [
-            'titulo'       => 'Termo de Responsabilidade e Entrega de Equipamento',
-            'declaracao'   => "Declaro que recebi da {$empresa}, em regime de comodato e para uso exclusivo no exercício das minhas atividades profissionais, "
-                . 'o equipamento e os acessórios descritos neste termo, em perfeito estado de conservação e funcionamento, '
-                . 'ressalvadas as observações registradas. Comprometo-me a:',
-            'compromissos' => [
-                'utilizá-lo somente para fins profissionais, conforme a Política de Segurança da Informação e as normas internas;',
-                'zelar pela sua guarda e conservação, sem emprestá-lo, cedê-lo ou permitir o uso por pessoas não autorizadas;',
-                'não instalar programas não autorizados nem alterar as configurações de segurança, os componentes ou a etiqueta de patrimônio;',
-                'comunicar imediatamente à TI qualquer defeito, dano, perda, furto ou roubo, apresentando boletim de ocorrência nos casos de furto ou roubo;',
-                'devolvê-lo com os acessórios, nas mesmas condições em que o recebi, ressalvado o desgaste natural pelo uso normal, '
-                    . 'sempre que solicitado, na sua substituição ou no encerramento do meu vínculo com a empresa.',
-            ],
-            'ciencia'      => 'Estou ciente de que o equipamento e os dados corporativos nele armazenados pertencem à empresa, '
-                . 'podendo ser acessados, monitorados ou removidos conforme a Política de Segurança da Informação e a '
-                . 'Lei Geral de Proteção de Dados (Lei nº 13.709/2018). Em caso de dano causado por dolo ou culpa '
-                . '(negligência, imprudência ou imperícia), perda ou extravio, autorizo o desconto do valor correspondente, '
-                . 'nos termos do art. 462, § 1º, da Consolidação das Leis do Trabalho (CLT).',
-        ];
+    /** Texto guardado no termo (desde a 1.3.0) ou, em termos antigos, o da configuração atual */
+    public static function textoFor(array $d): array
+    {
+        return $d['texto'] ?? self::clausula($d['tipo'], PluginAssettermsConfig::getEffective((int) ($d['entities_id'] ?? 0)));
     }
 
     // ------------------------------------------------------------------- PDF
@@ -784,7 +782,7 @@ class PluginAssettermsTerm extends CommonGLPI
     {
         $e = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $or = static fn ($v): string => trim((string) $v) !== '' ? (string) $v : 'Não informado';
-        $texto = self::clausula($d['tipo'], $d['empresa']);
+        $texto = self::textoFor($d);
         $devolucao = $d['tipo'] === 'devolucao';
 
         // Sem o texto "Powered by TCPDF" que a biblioteca acrescenta ao fim do documento
@@ -819,7 +817,7 @@ class PluginAssettermsTerm extends CommonGLPI
 
         $eq = $d['equipamento'];
         $html = '<h2 style="text-align:center;color:#1f3a5f;">' . $e(mb_strtoupper($texto['titulo'])) . '</h2>'
-            . '<p style="text-align:center;color:#555;">' . $e($d['empresa']) . '</p>'
+            . '<p style="text-align:center;color:#555;">' . $e($d['empresa']) . (($d['cnpj'] ?? '') !== '' ? ' &bull; CNPJ ' . $e($d['cnpj']) : '') . '</p>'
             . '<table cellpadding="3" style="border:0.3px solid #ccc;"><tr>'
             . '<td><b>Data:</b> ' . $e($d['data']) . '</td>'
             . '<td style="text-align:right;"><b>Código do documento:</b> ' . $e($d['codigo']) . '</td>'
@@ -1030,9 +1028,8 @@ class PluginAssettermsTerm extends CommonGLPI
         $specs     = self::getComputerSpecs($computer);
         $can_edit  = $computer->can($cid, UPDATE);
         $states    = self::getStates();
-        $empresa   = (string) Dropdown::getDropdownName('glpi_entities', (int) ($computer->fields['entities_id'] ?? 0));
         $user_id   = (int) ($computer->fields['users_id'] ?? 0);
-        $user_name = self::userName($user_id) ?: 'Nenhum colaborador vinculado';
+        $user_name = self::holderName($computer);
         $status    = (int) ($computer->fields['states_id'] ?? 0) > 0
             ? (string) Dropdown::getDropdownName('glpi_states', (int) $computer->fields['states_id'])
             : 'Não definido';
@@ -1062,7 +1059,8 @@ class PluginAssettermsTerm extends CommonGLPI
         $mail      = self::mailConfigured();
         $state_uso = self::findState($states, 'Em uso');
         $state_est = self::findState($states, 'Em estoque');
-        $clausulas = ['entrega' => self::clausula('entrega', $empresa), 'devolucao' => self::clausula('devolucao', $empresa)];
+        $cfg       = PluginAssettermsConfig::getEffective((int) ($computer->fields['entities_id'] ?? 0));
+        $clausulas = ['entrega' => self::clausula('entrega', $cfg), 'devolucao' => self::clausula('devolucao', $cfg)];
         $options   = $can_edit ? self::equipmentOptions() : [];
         ?>
         <div class="termo-container">
@@ -1133,12 +1131,32 @@ class PluginAssettermsTerm extends CommonGLPI
                     </div>
 
                     <div class="termo-field" data-mode="status" hidden>
-                        <label class="termo-label">Usuário do equipamento</label>
-                        <select name="usuario_acao" class="form-select">
+                        <label class="termo-label" for="usuario_acao">Usuário do equipamento</label>
+                        <select name="usuario_acao" id="usuario_acao" class="form-select">
                             <option value="manter">Manter: <?= $e($user_name) ?></option>
+                            <option value="mover">Mover para outra pessoa</option>
                             <option value="remover">Remover o usuário do equipamento</option>
                         </select>
                         <small class="termo-hint">Nenhum termo é gerado. A mudança fica no histórico do equipamento.</small>
+
+                        <div class="termo-mover" data-acao="mover" hidden>
+                            <label class="termo-label mt-2">Novo usuário no GLPI</label>
+                            <?php
+                            User::dropdown([
+                                'name'   => 'users_id_status',
+                                'value'  => 0,
+                                'entity' => (int) ($computer->fields['entities_id'] ?? 0),
+                                'right'  => 'all',
+                            ]);
+                            ?>
+                            <label class="termo-label mt-2" for="nome_status">Nome de preferência</label>
+                            <input type="text" name="nome_status" id="nome_status" class="form-control" maxlength="255"
+                                   placeholder="Ex.: Maria (Comercial) ou o nome de quem não tem usuário no GLPI">
+                            <small class="termo-hint">
+                                Escolha o usuário do GLPI, digite o nome, ou os dois. O nome fica no campo
+                                <strong>Usuário alternativo</strong> do computador. Sem usuário escolhido, é ele que identifica quem está com o equipamento.
+                            </small>
+                        </div>
                     </div>
 
                     <div class="termo-field">

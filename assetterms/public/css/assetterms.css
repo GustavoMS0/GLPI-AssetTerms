@@ -402,3 +402,43 @@
     font-family: monospace;
     font-size: 0.8rem;
 }
+
+/* Buscas de usuário do GLPI (Colaborador e Mover para outra pessoa) ocupam a largura do campo.
+   O GLPI as coloca num grupo de botões que encolhe, e a de "Mover" nasce escondida. */
+.termo-field > .btn-group,
+.termo-mover > .btn-group {
+    display: flex;
+    width: 100%;
+}
+
+.termo-field > .btn-group > .select2-container,
+.termo-mover > .btn-group > .select2-container {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0;
+}
+
+/* Configurar > Plugins > Asset Terms */
+.termo-config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px 16px;
+}
+
+.termo-config-help {
+    margin: 16px 0 4px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: #f1f5f9;
+    font-size: 0.82rem;
+    color: #475569;
+}
+
+.termo-config-text textarea {
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.termo-equip-item .termo-hint {
+    font-weight: 400;
+}

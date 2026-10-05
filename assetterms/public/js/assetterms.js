@@ -213,6 +213,15 @@
         }
         form.querySelectorAll('input[name="tipo_termo"]').forEach(function (r) { r.addEventListener('change', applyTipo); });
 
+        // Somente ciclo de vida: "Mover para outra pessoa" mostra o usuário do GLPI e o nome de preferência
+        const acaoSelect = form.querySelector('#usuario_acao');
+        function applyAcao() {
+            form.querySelectorAll('[data-acao]').forEach(function (el) {
+                el.hidden = !acaoSelect || el.dataset.acao !== acaoSelect.value;
+            });
+        }
+        if (acaoSelect) acaoSelect.addEventListener('change', applyAcao);
+
         function collect(modo) {
             const fd = new FormData(form);
             fd.set('modo', modo);
@@ -404,7 +413,53 @@
         });
     }
 
+    // --------------------------------------- Configuração (empresa e texto)
+    function initConfig(form) {
+        if (form.dataset.termoReady) return;
+        form.dataset.termoReady = '1';
+
+        // PDF de exemplo com o texto que está no formulário (antes de salvar)
+        form.querySelectorAll('.termo-config-preview').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const fd = new FormData(form);
+                fd.delete('_glpi_csrf_token');
+                fd.set('preview_tipo', btn.dataset.tipo);
+                const win = window.open('', '_blank');
+                btn.disabled = true;
+                post(form.dataset.preview, fd)
+                    .then(function (r) {
+                        if (!r.ok) return readJson(r).then(function (j) { throw new Error(j.message); });
+                        return r.blob();
+                    })
+                    .then(function (blob) {
+                        btn.disabled = false;
+                        const url = URL.createObjectURL(blob);
+                        if (win) { win.location.href = url; } else { window.location.href = url; }
+                    })
+                    .catch(function (err) {
+                        btn.disabled = false;
+                        if (win) win.close();
+                        alert(err.message || err);
+                    });
+            });
+        });
+
+        // Volta os campos de texto para o padrão do plugin (só no formulário; salva quando clicar em Salvar)
+        const defaults = JSON.parse(document.getElementById('assetterms-default-texts').textContent);
+        form.querySelector('.termo-config-default').addEventListener('click', function () {
+            if (!confirm('Trocar o texto dos dois termos pelo texto padrão do plugin? A mudança só vale depois de clicar em Salvar.')) return;
+            Object.keys(defaults).forEach(function (tipo) {
+                form.querySelector('[name="' + tipo + '_titulo"]').value = defaults[tipo].titulo;
+                form.querySelector('[name="' + tipo + '_declaracao"]').value = defaults[tipo].declaracao;
+                form.querySelector('[name="' + tipo + '_compromissos"]').value = defaults[tipo].compromissos.join('\n');
+                form.querySelector('[name="' + tipo + '_ciencia"]').value = defaults[tipo].ciencia;
+            });
+        });
+    }
+
     function scan() {
+        const config = document.getElementById('form-assetterms-config');
+        if (config) initConfig(config);
         const tab = document.getElementById('form-termo-responsabilidade');
         if (tab) initTab(tab);
         const sign = document.getElementById('form-termo-assinatura');

@@ -32,8 +32,11 @@ Ativos › Termos de Responsabilidade › [ NB-COLAB01            ▾ ]
 - **Três ações:**
   - **entrega ao colaborador;**
   - **devolução à TI;**
-  - **somente ciclo de vida:** muda só o status, sem termo e sem colaborador.
+  - **somente ciclo de vida:** muda só o status, sem termo. O equipamento pode manter a pessoa, ficar sem ninguém ou **passar para outra pessoa**: um usuário do GLPI ou um nome digitado, para quem não tem usuário.
 - **Termos de entrega e de devolução** com textos próprios. O texto aparece na tela antes da assinatura e é o mesmo que vai para o PDF.
+- **Tela de configuração para o administrador:**
+  - nome da empresa, CNPJ e cidade por empresa (matriz e filiais);
+  - o texto dos termos editável, com o texto padrão já preenchido e PDF de exemplo antes de salvar.
 - **Dados do equipamento:**
   - fabricante, modelo, tipo, processador, memória, disco e sistema operacional vêm do inventário;
   - o técnico pode conferir ou completar cada campo, escolhendo entre os **valores já cadastrados no GLPI** ou digitando;
@@ -100,13 +103,11 @@ Depois, entre no GLPI. O menu **Ativos › Termos de Responsabilidade** já apar
 > - **CentOS, Rocky ou RHEL:** o usuário do servidor web é `apache`, não `www-data`. Troque `sudo -u www-data` por `sudo -u apache`.
 > - **`--username=glpi`:** é o login de um administrador do GLPI. Troque se o seu administrador tiver outro nome.
 
-Para conferir:
+Para conferir, abra **Configurar › Plugins**: o *Asset Terms* deve aparecer como **Habilitado**. No GLPI 11, também dá para conferir pelo terminal:
 
 ```bash
 cd /var/www/glpi && sudo -u www-data php bin/console plugin:list | grep -i assetterms
 ```
-
-O resultado deve mostrar o plugin como **Ativado**.
 
 ### Atualizar para uma versão nova
 
@@ -119,11 +120,13 @@ Rode **os mesmos comandos da instalação**. Eles trocam os arquivos, e o `plugi
 ```bash
 cd /var/www/glpi
 sudo -u www-data php bin/console plugin:deactivate assetterms
-sudo -u www-data php bin/console plugin:uninstall --username=glpi assetterms
+sudo -u www-data php bin/console plugin:uninstall assetterms
 sudo rm -rf /var/www/glpi/plugins/assetterms
 ```
 
 Os PDFs dos termos assinados continuam na aba **Documentos** dos computadores. Só os termos que ainda aguardavam assinatura são descartados.
+
+No GLPI 11, o plugin ainda aparece em **Configurar › Plugins** como *Erro / para limpar*. Clique em **Limpar** para tirá-lo da lista.
 
 ### Pela tela
 
@@ -203,13 +206,18 @@ Enquanto não é assinado, o termo aparece em **Aguardando assinatura**, na aba 
 Para mudar o status sem termo nenhum: equipamento para a manutenção, empréstimo, descarte, volta ao estoque etc.
 
 1. Escolha o **novo status**. É obrigatório.
-2. Escolha se o equipamento **mantém** o usuário atual ou fica **sem usuário**.
+2. Escolha o que acontece com o usuário do equipamento:
+   - **Manter:** continua com quem está;
+   - **Mover para outra pessoa:** escolha o **novo usuário do GLPI**, digite um **nome de preferência**, ou os dois. O nome fica no campo **Usuário alternativo** do computador. Ele serve para quem não tem usuário no GLPI (terceirizado, estagiário, setor) ou para um apelido;
+   - **Remover:** o equipamento fica sem ninguém (limpa também o nome).
 3. Escreva o **motivo**, se quiser. Ele vai para o histórico.
 4. Clique em **Atualizar status**.
 
 Nenhum PDF é gerado. O histórico do computador registra, por exemplo:
 
 > *Ciclo de vida: status alterado para Em manutenção e usuário removido, sem termo. Observação: Tela quebrada, enviado para a garantia.*
+>
+> *Ciclo de vida: status alterado para Empréstimo e equipamento movido para João Silva - Terceirizado (sem usuário no GLPI), sem termo.*
 
 ### O que vai no PDF
 
@@ -220,15 +228,45 @@ Nenhum PDF é gerado. O histórico do computador registra, por exemplo:
 - a declaração;
 - as assinaturas do colaborador e da TI, com a cidade e a data por extenso.
 
-A empresa é a entidade do computador. A cidade vem do campo **Cidade** da entidade, em **Administração › Entidades**.
+O nome da empresa, o CNPJ, a cidade e o texto vêm da **configuração** (veja abaixo). Sem configuração, o plugin usa o nome e a cidade da entidade do computador e o texto padrão.
 
 ---
 
-## Texto do termo
+## Configuração: empresa e texto do termo
+
+Em **Configurar › Plugins**, clique em **Asset Terms**. Administradores também chegam pelo botão **Configurar empresa e texto**, em Ativos › Termos de Responsabilidade.
+
+1. **Escolha a empresa (entidade).**
+   - Matriz e filiais podem ter configurações diferentes.
+   - Uma filial sem configuração própria usa a da entidade acima. A tela avisa de qual entidade ela está herdando.
+2. **Empresa:**
+   - **Nome da empresa:** vai no cabeçalho do PDF e no lugar de `{empresa}` no texto;
+   - **CNPJ:** opcional, também vai no cabeçalho e no lugar de `{cnpj}`;
+   - **Cidade:** vai em "Cidade, 5 de outubro de 2026." acima das assinaturas.
+3. **Texto do termo de entrega e do termo de devolução:**
+   - título;
+   - declaração;
+   - compromissos, um por linha (na entrega saem numerados I, II, III...);
+   - parágrafo final.
+4. Clique em **Ver PDF de exemplo** para conferir antes de salvar, e depois em **Salvar**.
+
+O plugin já vem com o [texto padrão](#texto-padrão-do-termo). Para voltar a ele, use um dos botões:
+- **Preencher com o texto padrão:** troca só o texto do formulário, e você ainda salva;
+- **Restaurar padrão:** apaga a configuração desta entidade, que volta a herdar da entidade acima ou o padrão.
+
+> **O que muda ao salvar:** só os próximos termos.
+> - Os termos já assinados não mudam.
+> - Os termos que aguardam assinatura mantêm o texto com que foram enviados: o colaborador assina exatamente o que recebeu.
+
+---
+
+## Texto padrão do termo
+
+É o texto que o plugin traz. Dá para mudar tudo na [tela de configuração](#configuração-empresa-e-texto-do-termo). `{empresa}` é trocado pelo nome da empresa.
 
 ### Entrega
 
-> Declaro que recebi da **[empresa]**, em regime de comodato e para uso exclusivo no exercício das minhas atividades profissionais, o equipamento e os acessórios descritos neste termo, em perfeito estado de conservação e funcionamento, ressalvadas as observações registradas. Comprometo-me a:
+> Declaro que recebi da empresa **{empresa}**, em regime de comodato e para uso exclusivo no exercício das minhas atividades profissionais, o equipamento e os acessórios descritos neste termo, em perfeito estado de conservação e funcionamento, ressalvadas as observações registradas. Comprometo-me a:
 >
 > I. utilizá-lo somente para fins profissionais, conforme a Política de Segurança da Informação e as normas internas;
 > II. zelar pela sua guarda e conservação, sem emprestá-lo, cedê-lo ou permitir o uso por pessoas não autorizadas;
@@ -240,7 +278,7 @@ A empresa é a entidade do computador. A cidade vem do campo **Cidade** da entid
 
 ### Devolução
 
-> Declaro que, nesta data, devolvi à **[empresa]** o equipamento e os acessórios descritos neste termo, conferidos na presença do(a) responsável pela TI.
+> Declaro que, nesta data, devolvi à empresa **{empresa}** o equipamento e os acessórios descritos neste termo, conferidos na presença do(a) responsável pela TI.
 >
 > - O estado do equipamento e de cada acessório na devolução é o registrado no campo de observações deste termo.
 > - Acessórios não listados como devolvidos foram considerados ausentes na conferência.
@@ -250,19 +288,19 @@ A empresa é a entidade do computador. A cidade vem do campo **Cidade** da entid
 
 ### Antes de usar na sua empresa
 
-- **Revisão jurídica:** este texto é um modelo. Peça ao RH ou ao jurídico para revisá-lo, principalmente a autorização de desconto.
+- **Revisão jurídica:** o texto padrão é um modelo. Peça ao RH ou ao jurídico para revisá-lo, principalmente a autorização de desconto, e ajuste na tela de configuração.
   - O art. 462, § 1º, da CLT só permite descontar o prejuízo do salário em dois casos: quando houve **dolo** do empregado, ou quando o desconto foi **combinado** com ele, o que o termo faz para os casos de culpa.
 - **Assinatura na tela ou pelo link:** é uma **assinatura eletrônica simples**, não uma assinatura digital com certificado ICP-Brasil. Pelo link, ela fica mais forte como prova, porque o colaborador entra com o próprio usuário e senha e o PDF registra o usuário, o IP e a data. Se a empresa exigir certificado digital, gere o PDF para assinatura e assine com a ferramenta de certificado da empresa.
 
 ---
 
-## Personalizar
+## Personalizar no código
 
-Tudo fica em [`assetterms/inc/term.class.php`](assetterms/inc/term.class.php):
+O texto e os dados da empresa se mudam pela [tela de configuração](#configuração-empresa-e-texto-do-termo). O resto fica em [`assetterms/inc/term.class.php`](assetterms/inc/term.class.php):
 
 | O quê | Onde |
 |---|---|
-| Texto dos termos (tela e PDF) | função `clausula()` |
+| Texto padrão (o que vem com o plugin) | `defaultTexts()` em [`inc/config.class.php`](assetterms/inc/config.class.php) |
 | Lista de acessórios | constante `CHECKLIST` |
 | Campos de dados do equipamento | constante `EQUIP_FIELDS` e função `equipmentOptions()` (sugestões) |
 | Acessórios marcados por padrão | constante `CHECKLIST_DEFAULT` |
@@ -277,6 +315,8 @@ Tudo fica em [`assetterms/inc/term.class.php`](assetterms/inc/term.class.php):
 | Pode **ver** computadores | sim, só as listas de termos | não |
 | Pode **alterar** o computador | sim | sim |
 | **Qualquer usuário**, inclusive do autoatendimento | não | assina pelo link só os termos enviados para ele |
+
+A **tela de configuração** (empresa e texto) é só para quem pode **alterar a configuração do GLPI** (Configurar › Geral), normalmente o Super-Admin.
 
 O PDF usa o tipo de documento **PDF**, que já vem liberado no GLPI. Ele fica em **Configurar › Listas suspensas › Tipos de documento**.
 
@@ -311,6 +351,16 @@ Validado no GLPI 11.0.10 e no GLPI 10.0.28, com o navegador:
 | Dados do equipamento | sugestões com valores do GLPI; valores editados vão para o termo sem alterar o cadastro do computador ✅ |
 | Menu Ativos › Termos de Responsabilidade | aparece no menu; escolher o computador abre o formulário; lista os pendentes de todos os computadores ✅ |
 | Usuário do autoatendimento abre a página do menu | acesso negado ✅ |
+| Mover para outra pessoa: usuário do GLPI + nome | vincula o usuário e guarda o nome em Usuário alternativo ✅ |
+| Mover para outra pessoa: só o nome | equipamento sem usuário do GLPI, com o nome; a tela mostra "Nome (sem usuário no GLPI)" ✅ |
+| Remover usuário | limpa o usuário e o nome ✅ |
+| Configuração: salvar empresa, CNPJ, cidade e texto | aparecem na tela do termo e no PDF, com `{empresa}` e `{cnpj}` trocados ✅ |
+| PDF de exemplo | gerado com o texto do formulário, sem salvar ✅ |
+| Texto alterado depois do envio | o colaborador assina o texto do momento do envio ✅ |
+| Filial sem configuração | usa a da matriz; com configuração própria, usa a dela ✅ |
+| Restaurar padrão | volta ao texto do plugin ✅ |
+| Usuário sem permissão de configuração | não acessa a tela ✅ |
+| Apóstrofo e `< > &` em textos e nomes (GLPI 10 e 11) | gravados e impressos como digitados ✅ |
 
 ---
 

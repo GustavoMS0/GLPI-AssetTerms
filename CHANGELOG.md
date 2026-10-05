@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.0] - 2026-10-05
+
+### Adicionado
+- **Tela de configuração** (Configurar › Plugins › Asset Terms, só para administradores):
+  - nome da empresa, CNPJ e cidade por entidade, no lugar do nome da entidade;
+  - texto dos termos de entrega e de devolução editável (título, declaração, compromissos e parágrafo final), com os marcadores `{empresa}` e `{cnpj}`;
+  - o plugin já vem com o texto padrão, com os botões "Restaurar padrão" e "Preencher com o texto padrão";
+  - PDF de exemplo antes de salvar;
+  - uma filial sem configuração própria usa a da entidade acima.
+- Termos enviados para assinatura guardam o texto do momento do envio: o colaborador assina exatamente o que a TI mandou, mesmo que o texto mude depois.
+- **Somente ciclo de vida › Mover para outra pessoa:** escolha um usuário do GLPI, digite um nome de preferência, ou os dois. O nome fica no campo "Usuário alternativo" do computador e identifica quem está com o equipamento quando a pessoa não tem usuário no GLPI.
+- Botão "Configurar empresa e texto" em Ativos › Termos de Responsabilidade, para administradores.
+
+### Corrigido
+- GLPI 10: textos digitados com apóstrofo ou `< > &` (observações, dados do equipamento, nomes) apareciam com `\'` ou entidades HTML no PDF e no cadastro.
+- Caixas de busca de usuário (Colaborador e Mover para outra pessoa) ocupam a largura do campo.
+
 ## [1.2.0] - 2026-10-05
 
 ### Adicionado
@@ -10,6 +27,7 @@
 
 ### Alterado
 - Sem o envio de e-mails do GLPI configurado, o botão de e-mail não aparece e o plugin orienta a usar o link. A cópia do PDF e o aviso ao técnico só são enviados quando há e-mail configurado.
+- Acessórios: "Teclado externo" passou a "Teclado", e "Cabo de rede / trava de segurança" passou a "Trava de segurança".
 
 ## [1.1.0] - 2026-10-05
 

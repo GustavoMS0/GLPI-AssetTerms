@@ -31,7 +31,7 @@
  * ------------------------------------------------------------------------
  */
 
-define('PLUGIN_ASSETTERMS_VERSION', '1.2.0');
+define('PLUGIN_ASSETTERMS_VERSION', '1.3.0');
 define('PLUGIN_ASSETTERMS_MIN_GLPI', '10.0.0');
 define('PLUGIN_ASSETTERMS_MAX_GLPI', '11.0.99');
 
@@ -55,12 +55,15 @@ function plugin_init_assetterms()
         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts('assetterms', '#^/front/sign\.php$#', \Glpi\Http\Firewall::STRATEGY_NO_CHECK);
     }
 
+    // Configurar > Plugins > Asset Terms: empresa e texto dos termos
+    $PLUGIN_HOOKS['config_page']['assetterms'] = 'front/config.php';
+
     // Ativos > Termos de Responsabilidade (escolha do computador e termos pendentes)
     $PLUGIN_HOOKS['menu_toadd']['assetterms'] = ['assets' => 'PluginAssettermsMenu'];
 
     // GLPI 11 serve os arquivos estáticos a partir de public/; o GLPI 10, da raiz do plugin
     $uri   = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
-    $pages = ['/front/computer.form.php', '/assetterms/front/sign.php', '/assetterms/front/term.php'];
+    $pages = ['/front/computer.form.php', '/assetterms/front/sign.php', '/assetterms/front/term.php', '/assetterms/front/config.php'];
     if (array_filter($pages, static fn ($p) => str_ends_with($uri, $p))) {
         $prefix = version_compare(GLPI_VERSION, '11.0.0-dev', '>=') ? '' : 'public/';
         $PLUGIN_HOOKS['add_javascript']['assetterms'] = [$prefix . 'js/assetterms.js'];
@@ -99,19 +102,23 @@ function plugin_assetterms_check_config($verbose = false)
 }
 
 /**
- * Cria a tabela dos termos enviados por e-mail. Os PDFs ficam na aba Documentos do GLPI
+ * Cria as tabelas dos termos enviados para assinatura e da configuração por empresa. Os PDFs ficam na aba Documentos do GLPI
  * e continuam lá mesmo se o plugin for removido.
  */
 function plugin_assetterms_install()
 {
     include_once __DIR__ . '/inc/term.class.php';
+    include_once __DIR__ . '/inc/config.class.php';
     PluginAssettermsTerm::installSchema();
+    PluginAssettermsConfig::installSchema();
     return true;
 }
 
 function plugin_assetterms_uninstall()
 {
     include_once __DIR__ . '/inc/term.class.php';
+    include_once __DIR__ . '/inc/config.class.php';
     PluginAssettermsTerm::uninstallSchema();
+    PluginAssettermsConfig::uninstallSchema();
     return true;
 }
