@@ -6,7 +6,8 @@
  *
  * Termos de entrega e devolução de equipamentos em PDF, com checklist de
  * acessórios, assinatura na tela (toque ou mouse), arquivamento na aba
- * Documentos e registro no histórico do ativo.
+ * Documentos e registro no histórico do ativo. O termo também pode ser enviado
+ * por e-mail: o colaborador entra no GLPI pelo link e assina.
  *
  * Copyright (C) 2026 by G. Martins
  * ------------------------------------------------------------------------
@@ -30,12 +31,13 @@
  * ------------------------------------------------------------------------
  */
 
-define('PLUGIN_ASSETTERMS_VERSION', '1.0.0');
+define('PLUGIN_ASSETTERMS_VERSION', '1.1.0');
 define('PLUGIN_ASSETTERMS_MIN_GLPI', '10.0.0');
 define('PLUGIN_ASSETTERMS_MAX_GLPI', '11.0.99');
 
 /**
- * Inicialização: registra a aba nos computadores e carrega CSS e JS na tela do computador.
+ * Inicialização: registra a aba nos computadores e carrega CSS e JS na tela do computador
+ * e na página de assinatura.
  */
 function plugin_init_assetterms()
 {
@@ -47,9 +49,15 @@ function plugin_init_assetterms()
         'addtabon' => ['Computer'],
     ]);
 
+    // GLPI 11: a página do link do e-mail faz a própria checagem de login (front/sign.php),
+    // para levar quem não está logado direto à tela de login e voltar ao termo depois
+    if (class_exists(\Glpi\Http\Firewall::class) && method_exists(\Glpi\Http\Firewall::class, 'addPluginStrategyForLegacyScripts')) {
+        \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts('assetterms', '#^/front/sign\.php$#', \Glpi\Http\Firewall::STRATEGY_NO_CHECK);
+    }
+
     // GLPI 11 serve os arquivos estáticos a partir de public/; o GLPI 10, da raiz do plugin
     $uri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
-    if (str_ends_with($uri, '/front/computer.form.php')) {
+    if (str_ends_with($uri, '/front/computer.form.php') || str_ends_with($uri, '/assetterms/front/sign.php')) {
         $prefix = version_compare(GLPI_VERSION, '11.0.0-dev', '>=') ? '' : 'public/';
         $PLUGIN_HOOKS['add_javascript']['assetterms'] = [$prefix . 'js/assetterms.js'];
         $PLUGIN_HOOKS['add_css']['assetterms']        = [$prefix . 'css/assetterms.css'];
@@ -86,13 +94,20 @@ function plugin_assetterms_check_config($verbose = false)
     return true;
 }
 
-/** Não cria tabelas: os termos ficam na aba Documentos do GLPI. */
+/**
+ * Cria a tabela dos termos enviados por e-mail. Os PDFs ficam na aba Documentos do GLPI
+ * e continuam lá mesmo se o plugin for removido.
+ */
 function plugin_assetterms_install()
 {
+    include_once __DIR__ . '/inc/term.class.php';
+    PluginAssettermsTerm::installSchema();
     return true;
 }
 
 function plugin_assetterms_uninstall()
 {
+    include_once __DIR__ . '/inc/term.class.php';
+    PluginAssettermsTerm::uninstallSchema();
     return true;
 }

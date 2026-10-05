@@ -185,6 +185,424 @@ class PluginAssettermsTerm extends CommonGLPI
         return 0;
     }
 
+    // ------------------------------------------------- Pedidos de assinatura
+
+    /** Pedidos de assinatura enviados por e-mail */
+    public const TABLE = 'glpi_plugin_assetterms_requests';
+    public const PENDING  = 0;
+    public const SIGNED   = 1;
+    public const CANCELED = 2;
+
+    public static function installSchema(): void
+    {
+        global $DB;
+        if ($DB->tableExists(self::TABLE)) {
+            return;
+        }
+        $DB->doQuery("CREATE TABLE `" . self::TABLE . "` (
+            `id` int unsigned NOT NULL AUTO_INCREMENT,
+            `computers_id` int unsigned NOT NULL DEFAULT '0',
+            `entities_id` int unsigned NOT NULL DEFAULT '0',
+            `users_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'colaborador que assina',
+            `users_id_tech` int unsigned NOT NULL DEFAULT '0' COMMENT 'quem enviou',
+            `type` varchar(20) NOT NULL DEFAULT 'entrega',
+            `code` varchar(20) NOT NULL DEFAULT '',
+            `status` tinyint NOT NULL DEFAULT '0',
+            `data` longtext COMMENT 'dados do termo no momento do envio (JSON)',
+            `documents_id` int unsigned NOT NULL DEFAULT '0',
+            `sign_ip` varchar(45) NOT NULL DEFAULT '',
+            `date_send` timestamp NULL DEFAULT NULL,
+            `date_signed` timestamp NULL DEFAULT NULL,
+            `date_creation` timestamp NULL DEFAULT NULL,
+            `date_mod` timestamp NULL DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            KEY `computers_id` (`computers_id`),
+            KEY `users_id` (`users_id`),
+            KEY `status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
+    }
+
+    public static function uninstallSchema(): void
+    {
+        global $DB;
+        if ($DB->tableExists(self::TABLE)) {
+            $DB->doQuery('DROP TABLE `' . self::TABLE . '`');
+        }
+    }
+
+    /**
+     * Valores para $DB->insert/update. O GLPI 11 escapa sozinho; o GLPI 10 espera os
+     * valores já escapados (como chegam de um formulário).
+     */
+    public static function dbValues(array $values): array
+    {
+        global $DB;
+        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
+            foreach ($values as $k => $v) {
+                if (is_string($v)) {
+                    $values[$k] = $DB->escape($v);
+                }
+            }
+        }
+        return $values;
+    }
+
+    /** Responde em JSON. Quem chama encerra o script com return. */
+    public static function json(array $data, int $code = 200): void
+    {
+        http_response_code($code);
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode($data);
+    }
+
+    /** Endereço web do plugin; com $absolute, inclui o endereço do GLPI (para e-mails) */
+    public static function webPath(bool $absolute = false): string
+    {
+        global $CFG_GLPI;
+        if (version_compare(GLPI_VERSION, '11.0.0-dev', '>=')) {
+            return ($absolute ? $CFG_GLPI['url_base'] : $CFG_GLPI['root_doc']) . '/plugins/assetterms';
+        }
+        return Plugin::getWebDir('assetterms', true, $absolute);
+    }
+
+    public static function signUrl(int $request_id): string
+    {
+        return self::webPath(true) . '/front/sign.php?id=' . $request_id;
+    }
+
+    /** Pedido de assinatura (linha da tabela, com os dados do termo decodificados) ou null */
+    public static function getRequest(int $id): ?array
+    {
+        global $DB;
+        if ($id <= 0) {
+            return null;
+        }
+        foreach ($DB->request(['FROM' => self::TABLE, 'WHERE' => ['id' => $id]]) as $row) {
+            $row['data'] = json_decode((string) $row['data'], true) ?: [];
+            return $row;
+        }
+        return null;
+    }
+
+    /** Pedidos aguardando assinatura de um computador */
+    public static function getPendingRequests(int $computers_id): array
+    {
+        global $DB;
+        $rows = [];
+        foreach (
+            $DB->request([
+                'FROM'  => self::TABLE,
+                'WHERE' => ['computers_id' => $computers_id, 'status' => self::PENDING],
+                'ORDER' => 'date_send DESC',
+            ]) as $row
+        ) {
+            $row['data'] = json_decode((string) $row['data'], true) ?: [];
+            $rows[] = $row;
+        }
+        return $rows;
+    }
+
+    // ---------------------------------------------------- Montagem do termo
+
+    /**
+     * Valida o formulário da aba. Retorna os campos limpos ou uma mensagem de erro (string).
+     *
+     * @return array|string
+     */
+    public static function collectInput(array $post)
+    {
+        $tipo = ($post['tipo_termo'] ?? '') === 'devolucao' ? 'devolucao' : 'entrega';
+        $uid  = (int) ($post['users_id'] ?? 0);
+        if (self::userName($uid) === '') {
+            return 'Selecione o colaborador.';
+        }
+        $checklist = [];
+        foreach ((array) ($post['checklist'] ?? []) as $key) {
+            if (is_string($key) && isset(self::CHECKLIST[$key])) {
+                $checklist[$key] = self::CHECKLIST[$key];
+            }
+        }
+        $state_id = (int) ($post['target_state_id'] ?? 0);
+        if ($state_id > 0 && !isset(self::getStates()[$state_id])) {
+            $state_id = 0;
+        }
+        return [
+            'tipo'        => $tipo,
+            'users_id'    => $uid,
+            'checklist'   => array_values($checklist),
+            'state_id'    => $state_id,
+            'observacoes' => mb_substr(trim((string) ($post['observacoes'] ?? '')), 0, 2000),
+        ];
+    }
+
+    /**
+     * Dados do termo (sem assinatura). Também é o que fica guardado no pedido enviado por e-mail,
+     * para o colaborador assinar exatamente o que a TI registrou.
+     */
+    public static function buildData(Computer $computer, array $in, int $tech_id): array
+    {
+        $entity = new Entity();
+        $entity->getFromDB((int) $computer->fields['entities_id']);
+        $codigo = strtoupper(substr(hash('sha256', implode('|', [$computer->getID(), $in['tipo'], $in['users_id'], $tech_id, microtime(true), random_bytes(8)])), 0, 12));
+
+        return [
+            'tipo'         => $in['tipo'],
+            'computers_id' => (int) $computer->getID(),
+            'entities_id'  => (int) $computer->fields['entities_id'],
+            'empresa'      => (string) ($entity->fields['name'] ?? ''),
+            'cidade'       => trim((string) ($entity->fields['town'] ?? '')),
+            'codigo'       => implode('-', str_split($codigo, 4)),
+            'tecnico'      => self::userName($tech_id) ?: 'TI',
+            'tecnico_id'   => $tech_id,
+            'colaborador'  => self::userData($in['users_id']) + ['id' => $in['users_id']],
+            'equipamento'  => self::getComputerSpecs($computer) + [
+                'nome'       => (string) ($computer->fields['name'] ?? ''),
+                'serial'     => (string) ($computer->fields['serial'] ?? ''),
+                'patrimonio' => (string) ($computer->fields['otherserial'] ?? ''),
+            ],
+            'checklist'    => $in['checklist'],
+            'observacoes'  => $in['observacoes'],
+            'state_id'     => $in['state_id'],
+        ];
+    }
+
+    /** Data/hora do termo em texto (dd/mm/aaaa hh:mm e por extenso) */
+    public static function withDate(array $d, int $time): array
+    {
+        $meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+        $d['data']         = date('d/m/Y H:i', $time);
+        $d['data_extenso'] = date('j', $time) . ' de ' . $meses[(int) date('n', $time) - 1] . ' de ' . date('Y', $time);
+        return $d;
+    }
+
+    /**
+     * Confere a imagem da assinatura enviada pelo canvas (data:image/png;base64,...).
+     * Retorna o PNG binário, '' se não houver assinatura, ou null se for inválida.
+     */
+    public static function decodeSignature(string $raw): ?string
+    {
+        if ($raw === '') {
+            return '';
+        }
+        if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)$#', $raw, $m) || strlen($m[1]) > 1400000) {
+            return null;
+        }
+        $png  = (string) base64_decode($m[1], true);
+        $info = $png !== '' ? @getimagesizefromstring($png) : false;
+        return ($info !== false && ($info['mime'] ?? '') === 'image/png') ? $png : null;
+    }
+
+    public static function fileName(array $d, int $time): string
+    {
+        return sprintf(
+            '%s - %s - %s.pdf',
+            $d['tipo'] === 'devolucao' ? 'Termo de Devolução' : 'Termo de Entrega',
+            preg_replace('/[^\pL\pN ._-]+/u', '', $d['equipamento']['nome'] ?: 'equipamento'),
+            date('Y-m-d His', $time)
+        );
+    }
+
+    /**
+     * Gera o PDF, grava na aba Documentos, atualiza usuário e status do computador e registra no histórico.
+     * $d precisa ter data, assinatura, modo e ip. Retorna [documents_id, nome do status, conteúdo do PDF].
+     *
+     * @throws RuntimeException com a mensagem para o usuário
+     */
+    public static function archive(Computer $computer, array $d, int $time): array
+    {
+        $pdf     = self::buildPdf($d);
+        $titulo  = $d['tipo'] === 'devolucao' ? 'Termo de Devolução' : 'Termo de Entrega';
+        $arquivo = self::fileName($d, $time);
+        $nome    = $d['colaborador']['nome'];
+
+        // O GLPI move o arquivo do diretório temporário, confere o tipo e calcula o checksum
+        $tmp = GLPI_TMP_DIR . '/' . $arquivo;
+        if (file_put_contents($tmp, $pdf) === false) {
+            throw new RuntimeException('Não foi possível gravar o arquivo em ' . GLPI_TMP_DIR . '.');
+        }
+        $modo = ['email' => 'Assinado pelo link enviado por e-mail', 'tela' => 'Assinado na tela'][$d['modo']] ?? 'Para assinatura manual';
+        $input = [
+            'name'         => $titulo . ' - ' . ($d['equipamento']['nome'] ?: 'equipamento') . ' - ' . $nome . ' - ' . date('d/m/Y', $time),
+            'entities_id'  => (int) $computer->fields['entities_id'],
+            'is_recursive' => 0,
+            'comment'      => sprintf('%s de %s. Código %s. %s.', $titulo, $nome, $d['codigo'], $modo),
+            'users_id'     => (int) $d['tecnico_id'],
+            '_filename'    => [$arquivo],
+        ];
+        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
+            // O GLPI 10 espera a entrada escapada, como vem de um formulário
+            $input = Toolbox::addslashes_deep($input);
+        }
+        $document = new Document();
+        $doc_id   = (int) $document->add($input);
+        if (is_file($tmp)) {
+            @unlink($tmp);
+        }
+        if ($doc_id <= 0) {
+            throw new RuntimeException('O GLPI recusou o documento. Confira se o tipo PDF está liberado em Configurar > Listas suspensas > Tipos de documento.');
+        }
+
+        // Vínculo feito à parte: criando o documento já vinculado, o GLPI 10 troca o nome pelo do computador
+        $link = new Document_Item();
+        $link->add([
+            'documents_id' => $doc_id,
+            'itemtype'     => 'Computer',
+            'items_id'     => (int) $computer->getID(),
+            'entities_id'  => (int) $computer->fields['entities_id'],
+        ]);
+
+        $update = ['id' => (int) $computer->getID(), 'users_id' => $d['tipo'] === 'entrega' ? (int) $d['colaborador']['id'] : 0];
+        if ((int) $d['state_id'] > 0) {
+            $update['states_id'] = (int) $d['state_id'];
+        }
+        $computer->update($update);
+
+        $status = (int) $d['state_id'] > 0 ? (string) Dropdown::getDropdownName('glpi_states', (int) $d['state_id']) : '';
+        $msg    = "{$titulo} #{$doc_id} arquivado ({$modo}). Colaborador: {$nome}. Código: {$d['codigo']}." . ($status !== '' ? " Status: {$status}." : '');
+        Log::history((int) $computer->getID(), 'Computer', [0, '', $msg], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+
+        return [$doc_id, $status, $pdf];
+    }
+
+    // ---------------------------------------------------------------- E-mail
+
+    /**
+     * Envia um e-mail pela configuração de e-mail do GLPI. Retorna null ou a mensagem de erro.
+     *
+     * @param array|null $attachment [conteúdo, nome do arquivo]
+     */
+    public static function sendMail(string $to, string $name, string $subject, string $html, string $text, int $entities_id, ?array $attachment = null): ?string
+    {
+        if (!GLPIMailer::validateAddress($to)) {
+            return "o e-mail \"{$to}\" é inválido";
+        }
+        $sender = @Config::getEmailSender($entities_id);
+        if (empty($sender['email'])) {
+            return 'o GLPI não tem e-mail de remetente. Configure em Configurar > Notificações > Configuração das notificações por e-mail';
+        }
+
+        try {
+            $mailer = new GLPIMailer();
+            if (method_exists($mailer, 'getEmail')) {
+                // GLPI 11: Symfony Mailer
+                $email = $mailer->getEmail();
+                $email->from(new \Symfony\Component\Mime\Address($sender['email'], (string) ($sender['name'] ?? '')));
+                $email->to(new \Symfony\Component\Mime\Address($to, $name));
+                $email->subject($subject);
+                $email->html($html);
+                $email->text($text);
+                if ($attachment !== null) {
+                    $email->attach($attachment[0], $attachment[1], 'application/pdf');
+                }
+                return $mailer->send() ? null : ($mailer->getError() ?: 'falha no envio');
+            }
+
+            // GLPI 10: PHPMailer
+            $mailer->CharSet = 'utf-8';
+            $mailer->setFrom($sender['email'], (string) ($sender['name'] ?? ''), false);
+            $mailer->addAddress($to, $name);
+            $mailer->isHTML(true);
+            $mailer->Subject = $subject;
+            $mailer->Body    = $html;
+            $mailer->AltBody = $text;
+            if ($attachment !== null) {
+                $mailer->addStringAttachment($attachment[0], $attachment[1], 'base64', 'application/pdf');
+            }
+            return $mailer->send() ? null : ($mailer->ErrorInfo ?: 'falha no envio');
+        } catch (Throwable $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /** Corpo HTML simples para os e-mails do plugin */
+    private static function mailHtml(string $title, array $paragraphs, ?array $button = null): string
+    {
+        $e = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $html = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2937;max-width:560px;">'
+            . '<h2 style="color:#1f3a5f;font-size:18px;">' . $e($title) . '</h2>';
+        foreach ($paragraphs as $p) {
+            $html .= '<p style="line-height:1.5;">' . $p . '</p>';
+        }
+        if ($button !== null) {
+            $html .= '<p style="margin:24px 0;"><a href="' . $e($button[1]) . '" style="background:#1f6feb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">'
+                . $e($button[0]) . '</a></p>'
+                . '<p style="font-size:12px;color:#6b7280;">Se o botão não funcionar, copie este endereço no navegador:<br>' . $e($button[1]) . '</p>';
+        }
+        return $html . '<p style="font-size:12px;color:#6b7280;">Mensagem automática do GLPI.</p></div>';
+    }
+
+    /** E-mail para o colaborador com o link do termo. Retorna null ou a mensagem de erro. */
+    public static function sendRequestMail(array $req): ?string
+    {
+        $e    = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $d    = $req['data'];
+        $acao = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
+        $url  = self::signUrl((int) $req['id']);
+        $eq   = trim($d['equipamento']['nome'] . ($d['equipamento']['patrimonio'] !== '' ? ' (patrimônio ' . $d['equipamento']['patrimonio'] . ')' : ''));
+        $subject = "Termo de {$acao} do equipamento {$d['equipamento']['nome']} para assinatura";
+
+        $html = self::mailHtml("Termo de {$acao} de equipamento", [
+            'Olá, ' . $e($d['colaborador']['nome']) . '.',
+            $e($d['tecnico']) . " registrou a {$acao} do equipamento <b>" . $e($eq) . '</b> e precisa da sua assinatura no termo de responsabilidade.',
+            'Clique no botão abaixo, entre no GLPI com o seu usuário, leia o termo e assine na tela.',
+        ], ['Ler e assinar o termo', $url]);
+        $text = "Olá, {$d['colaborador']['nome']}.\n\n{$d['tecnico']} registrou a {$acao} do equipamento {$eq} e precisa da sua assinatura no termo de responsabilidade.\n\n"
+            . "Entre no GLPI com o seu usuário, leia o termo e assine:\n{$url}\n";
+
+        return self::sendMail($d['colaborador']['email'], $d['colaborador']['nome'], $subject, $html, $text, (int) $req['entities_id']);
+    }
+
+    /** Depois da assinatura: cópia em PDF para o colaborador e aviso para quem enviou. Erros vão para o log. */
+    public static function sendSignedMails(array $req, string $pdf, string $arquivo, string $quando): void
+    {
+        global $CFG_GLPI;
+
+        $e    = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $d    = $req['data'];
+        $acao = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
+        $eq   = $d['equipamento']['nome'];
+        $errors = [];
+
+        $err = self::sendMail(
+            $d['colaborador']['email'],
+            $d['colaborador']['nome'],
+            "Cópia do termo de {$acao} assinado - {$eq}",
+            self::mailHtml("Termo de {$acao} assinado", [
+                'Olá, ' . $e($d['colaborador']['nome']) . '.',
+                "Você assinou o termo de {$acao} do equipamento <b>" . $e($eq) . '</b> em ' . $e($quando) . '. A cópia em PDF está anexada a este e-mail.',
+            ]),
+            "Olá, {$d['colaborador']['nome']}.\n\nVocê assinou o termo de {$acao} do equipamento {$eq} em {$quando}. A cópia em PDF está anexada a este e-mail.\n",
+            (int) $req['entities_id'],
+            [$pdf, $arquivo]
+        );
+        if ($err !== null) {
+            $errors[] = "cópia para o colaborador: {$err}";
+        }
+
+        $tech = self::userData((int) $req['users_id_tech']);
+        if ($tech['email'] !== '') {
+            $link = $CFG_GLPI['url_base'] . '/front/computer.form.php?id=' . (int) $req['computers_id'];
+            $err = self::sendMail(
+                $tech['email'],
+                $tech['nome'],
+                "Termo de {$acao} assinado por {$d['colaborador']['nome']} - {$eq}",
+                self::mailHtml("Termo de {$acao} assinado", [
+                    $e($d['colaborador']['nome']) . " assinou o termo de {$acao} do equipamento <b>" . $e($eq) . '</b> em ' . $e($quando) . '.',
+                    'O PDF foi arquivado na aba Documentos do computador, e o usuário e o status do equipamento foram atualizados.',
+                ], ['Abrir o computador', $link]),
+                "{$d['colaborador']['nome']} assinou o termo de {$acao} do equipamento {$eq} em {$quando}.\n{$link}\n",
+                (int) $req['entities_id'],
+                [$pdf, $arquivo]
+            );
+            if ($err !== null) {
+                $errors[] = "aviso para {$tech['nome']}: {$err}";
+            }
+        }
+        if ($errors) {
+            Toolbox::logInFile('php-errors', 'Asset Terms: termo #' . (int) $req['id'] . ' assinado, mas houve falha no e-mail (' . implode('; ', $errors) . ")\n");
+        }
+    }
+
     // --------------------------------------------------------- Texto do termo
 
     /**
@@ -364,7 +782,19 @@ class PluginAssettermsTerm extends CommonGLPI
         $pdf->Ln(6);
         $pdf->SetFont('dejavusans', '', 7);
         $pdf->SetTextColor(110, 110, 110);
-        if ($d['assinatura'] !== '') {
+        if ($d['assinatura'] !== '' && ($d['modo'] ?? '') === 'email') {
+            $registro = sprintf(
+                'Assinatura eletrônica feita pelo(a) próprio(a) colaborador(a) em %s, autenticado(a) no GLPI com o usuário "%s", '
+                . 'a partir do endereço IP %s, depois de declarar que leu e concorda com este termo. '
+                . 'Termo enviado para assinatura por %s em %s. Documento gerado e arquivado no GLPI. Código do documento: %s.',
+                $d['data'],
+                $d['login'],
+                $d['ip'],
+                $d['tecnico'],
+                $d['enviado_em'],
+                $d['codigo']
+            );
+        } elseif ($d['assinatura'] !== '') {
             $registro = sprintf(
                 'Assinatura eletrônica do(a) colaborador(a) feita na tela em %s, na presença de %s, a partir do endereço IP %s. '
                 . 'Documento gerado e arquivado no GLPI. Código do documento: %s.',
@@ -423,7 +853,8 @@ class PluginAssettermsTerm extends CommonGLPI
             $termos[] = $d;
         }
 
-        $base       = $CFG_GLPI['root_doc'] . '/plugins/assetterms';
+        $base       = self::webPath();
+        $pendentes  = self::getPendingRequests($cid);
         $state_uso  = self::findState($states, 'Em uso');
         $state_est  = self::findState($states, 'Em estoque');
         $entrega    = self::clausula('entrega', $empresa);
@@ -556,16 +987,56 @@ class PluginAssettermsTerm extends CommonGLPI
                     <button type="button" id="btn-save-termo" class="btn btn-primary btn-lg">
                         <i class="ti ti-check"></i> Gerar e arquivar termo
                     </button>
-                    <button type="button" id="btn-print-blank" class="btn btn-outline-primary btn-lg">
-                        <i class="ti ti-printer"></i> Gerar PDF para assinar no papel
+                    <button type="button" id="btn-send-email" class="btn btn-outline-primary btn-lg">
+                        <i class="ti ti-mail-forward"></i> Enviar por e-mail para assinatura
+                    </button>
+                    <button type="button" id="btn-print-blank" class="btn btn-outline-secondary btn-lg">
+                        <i class="ti ti-printer"></i> PDF para assinar no papel
                     </button>
                     <div id="termo-loading-spinner" class="spinner-border text-primary ms-3 d-none" role="status">
                         <span class="visually-hidden">Gerando...</span>
                     </div>
                 </div>
+                <small class="termo-hint d-block mt-2">
+                    Pelo e-mail, o colaborador recebe um link, entra no GLPI com o próprio usuário e assina.
+                    O equipamento só é atualizado depois da assinatura.
+                </small>
 
                 <div id="termo-alert-box" class="alert d-none mt-3"></div>
             </form>
+            <?php endif; ?>
+
+            <?php if (!empty($pendentes)): ?>
+            <div class="termo-card mt-4" id="termo-pendentes">
+                <h4 class="section-title"><i class="ti ti-clock"></i> Aguardando assinatura</h4>
+                <div class="table-responsive">
+                    <table class="table table-hover termo-history-table">
+                        <thead>
+                            <tr><th>Enviado em</th><th>Termo</th><th>Colaborador</th><th>Enviado por</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($pendentes as $p): ?>
+                                <tr data-request="<?= (int) $p['id'] ?>">
+                                    <td><strong><?= $e(Html::convDateTime($p['date_send'])) ?></strong></td>
+                                    <td><?= $p['type'] === 'devolucao' ? 'Devolução' : 'Entrega' ?> <span class="text-muted">(<?= $e($p['code']) ?>)</span></td>
+                                    <td><?= $e($p['data']['colaborador']['nome'] ?? '') ?><br><small class="text-muted"><?= $e($p['data']['colaborador']['email'] ?? '') ?></small></td>
+                                    <td><?= $e($p['data']['tecnico'] ?? '') ?></td>
+                                    <td class="text-nowrap">
+                                        <?php if ($can_edit): ?>
+                                        <button type="button" class="btn btn-sm btn-outline-primary termo-request-action" data-action="reenviar" data-url="<?= $e($base . '/ajax/request.php') ?>">
+                                            <i class="ti ti-send"></i> Reenviar
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger termo-request-action" data-action="cancelar" data-url="<?= $e($base . '/ajax/request.php') ?>">
+                                            <i class="ti ti-x"></i> Cancelar
+                                        </button>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             <?php endif; ?>
 
             <div class="termo-card mt-4">

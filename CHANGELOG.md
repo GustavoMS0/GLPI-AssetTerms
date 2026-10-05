@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.0] - 2026-10-05
+
+### Adicionado
+- Envio do termo por e-mail: o colaborador recebe um link, entra no GLPI com o próprio usuário e assina na tela.
+- Página de assinatura que exige login e só abre para o colaborador destinatário. Sem sessão, leva à tela de login e volta ao termo.
+- Confirmação "li e concordo" antes da assinatura pelo link.
+- O PDF registra a assinatura pelo link: data, hora, usuário do GLPI, IP e quem enviou o termo.
+- Depois da assinatura: PDF arquivado, usuário e status do equipamento atualizados, cópia em PDF para o colaborador e aviso para quem enviou.
+- Lista "Aguardando assinatura" na aba do computador, com opções para reenviar e cancelar.
+- Tabela `glpi_plugin_assetterms_requests` para os termos enviados por e-mail.
+
+### Alterado
+- Endereços do plugin calculados pelo GLPI, o que também funciona com o plugin instalado pelo Marketplace no GLPI 10.
+
 ## [1.0.0] - 2026-10-05
 
 ### Adicionado

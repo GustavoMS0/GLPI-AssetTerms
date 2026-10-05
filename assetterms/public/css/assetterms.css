@@ -322,3 +322,28 @@
 .termo-clausula-box p + p {
     margin-top: 6px;
 }
+
+/* Página de assinatura pelo link do e-mail */
+.termo-sign-page {
+    margin: 16px auto;
+    padding: 0 12px;
+}
+
+.termo-aceite {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 18px;
+    padding: 12px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.termo-aceite input {
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+    flex: none;
+}

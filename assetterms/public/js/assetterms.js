@@ -1,9 +1,13 @@
 /**
  * ------------------------------------------------------------------------
- * Asset Terms - Formulário e assinatura em canvas
+ * Asset Terms - Formulários e assinatura em canvas
  *
- * A aba do computador é carregada por AJAX depois da página, então o
- * formulário é iniciado quando aparece no DOM (MutationObserver).
+ * - Aba do computador (#form-termo-responsabilidade): assinatura na tela,
+ *   envio por e-mail e PDF para o papel.
+ * - Página do link enviado por e-mail (#form-termo-assinatura): o colaborador assina.
+ *
+ * A aba é carregada por AJAX depois da página, então os formulários são
+ * iniciados quando aparecem no DOM (MutationObserver).
  * ------------------------------------------------------------------------
  */
 
@@ -28,25 +32,58 @@
         });
     }
 
-    function initTermo(form) {
-        if (form.dataset.termoReady) return;
-        form.dataset.termoReady = '1';
+    function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
 
-        const canvas = form.querySelector('#signature-canvas');
-        const wrapper = form.querySelector('.canvas-wrapper');
-        const saveBtn = form.querySelector('#btn-save-termo');
-        const paperBtn = form.querySelector('#btn-print-blank');
-        const stateSelect = form.querySelector('#target_state_id');
+    /** Lê a resposta JSON mesmo quando o servidor responde com erro */
+    function readJson(response) {
+        return response.json().catch(function () {
+            return { success: false, message: 'Erro ' + response.status + ' ao falar com o servidor.' };
+        });
+    }
+
+    function reloadSoon() {
+        setTimeout(function () { window.location.reload(); }, 1800);
+    }
+
+    /** Alerta e indicador de carregamento de um formulário */
+    function feedback(form) {
         const alertBox = form.querySelector('#termo-alert-box');
         const spinner = form.querySelector('#termo-loading-spinner');
-        const radios = form.querySelectorAll('input[name="tipo_termo"]');
+        return {
+            show: function (kind, html) {
+                alertBox.className = 'alert alert-' + kind + ' mt-3';
+                alertBox.innerHTML = html;
+            },
+            hide: function () {
+                alertBox.className = 'alert d-none mt-3';
+            },
+            busy: function (on) {
+                form.querySelectorAll('.termo-actions-bar button').forEach(function (b) { b.disabled = on; });
+                if (spinner) spinner.classList.toggle('d-none', !on);
+            },
+        };
+    }
+
+    // ------------------------------------------------------- Quadro de assinatura
+    function signaturePad(form) {
+        const canvas = form.querySelector('#signature-canvas');
+        const wrapper = form.querySelector('.canvas-wrapper');
         const ctx = canvas.getContext('2d');
         let drawing = false;
         let hasDrawn = false;
         let sized = false;
 
-        // ---------------------------------------------------- Assinatura
-        function setupCanvas() {
+        function clear() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            hasDrawn = false;
+            wrapper.classList.remove('has-signature');
+        }
+
+        function setup() {
             const rect = canvas.getBoundingClientRect();
             if (!rect.width) return;
             sized = true;
@@ -58,13 +95,7 @@
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.strokeStyle = '#1e293b';
-            clearSignature();
-        }
-
-        function clearSignature() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            hasDrawn = false;
-            wrapper.classList.remove('has-signature');
+            clear();
         }
 
         function pos(e) {
@@ -74,7 +105,7 @@
         }
 
         function start(e) {
-            if (!sized) setupCanvas();
+            if (!sized) setup();
             drawing = true;
             hasDrawn = true;
             wrapper.classList.add('has-signature');
@@ -98,18 +129,6 @@
             drawing = false;
         }
 
-        // Exporta com fundo branco: o PDF não depende de transparência
-        function signaturePng() {
-            const out = document.createElement('canvas');
-            out.width = canvas.width;
-            out.height = canvas.height;
-            const o = out.getContext('2d');
-            o.fillStyle = '#ffffff';
-            o.fillRect(0, 0, out.width, out.height);
-            o.drawImage(canvas, 0, 0);
-            return out.toDataURL('image/png');
-        }
-
         canvas.addEventListener('mousedown', start);
         canvas.addEventListener('mousemove', move);
         window.addEventListener('mouseup', end);
@@ -117,15 +136,40 @@
         canvas.addEventListener('touchmove', move, { passive: false });
         canvas.addEventListener('touchend', end);
         canvas.addEventListener('touchcancel', end);
-        form.querySelector('#btn-clear-signature').addEventListener('click', clearSignature);
+        form.querySelector('#btn-clear-signature').addEventListener('click', clear);
 
         // Redimensionar apaga o desenho; só refaz se ainda não houver assinatura
         window.addEventListener('resize', function () {
-            if (!hasDrawn) setupCanvas();
+            if (!hasDrawn) setup();
         });
-        setupCanvas();
+        setup();
 
-        // ------------------------------------------- Entrega x devolução
+        return {
+            hasDrawn: function () { return hasDrawn; },
+            clear: clear,
+            // Exporta com fundo branco: o PDF não depende de transparência
+            png: function () {
+                const out = document.createElement('canvas');
+                out.width = canvas.width;
+                out.height = canvas.height;
+                const o = out.getContext('2d');
+                o.fillStyle = '#ffffff';
+                o.fillRect(0, 0, out.width, out.height);
+                o.drawImage(canvas, 0, 0);
+                return out.toDataURL('image/png');
+            },
+        };
+    }
+
+    // ------------------------------------------------------ Aba do computador
+    function initTab(form) {
+        if (form.dataset.termoReady) return;
+        form.dataset.termoReady = '1';
+
+        const pad = signaturePad(form);
+        const ui = feedback(form);
+        const stateSelect = form.querySelector('#target_state_id');
+
         function applyTipo() {
             const checked = form.querySelector('input[name="tipo_termo"]:checked');
             const tipo = checked.value;
@@ -140,85 +184,77 @@
                 stateSelect.value = state;
             }
         }
-        radios.forEach(function (r) { r.addEventListener('change', applyTipo); });
-
-        // ------------------------------------------------------ Envio
-        function showAlert(kind, html) {
-            alertBox.className = 'alert alert-' + kind + ' mt-3';
-            alertBox.innerHTML = html;
-        }
-
-        function escapeHtml(s) {
-            const d = document.createElement('div');
-            d.textContent = s == null ? '' : String(s);
-            return d.innerHTML;
-        }
-
-        function busy(on) {
-            saveBtn.disabled = on;
-            paperBtn.disabled = on;
-            spinner.classList.toggle('d-none', !on);
-        }
+        form.querySelectorAll('input[name="tipo_termo"]').forEach(function (r) { r.addEventListener('change', applyTipo); });
 
         function collect(modo) {
             const fd = new FormData(form);
             fd.set('modo', modo);
             fd.delete('signature_image');
-            if (modo === 'arquivar' && hasDrawn) {
-                fd.set('signature_image', signaturePng());
+            if (modo === 'arquivar' && pad.hasDrawn()) {
+                fd.set('signature_image', pad.png());
             }
             return fd;
         }
 
-        function errorFrom(response) {
-            return response.json()
-                .then(function (j) { return j.message || ('Erro ' + response.status); })
-                .catch(function () { return 'Erro ' + response.status + ' ao falar com o servidor.'; });
-        }
-
-        saveBtn.addEventListener('click', function () {
-            if (!hasDrawn && !confirm('O colaborador não assinou na tela. Arquivar o termo sem assinatura, para assinatura manual?')) {
-                return;
-            }
-            busy(true);
-            alertBox.className = 'alert d-none mt-3';
-            post(form.action, collect('arquivar'))
-                .then(function (r) {
-                    return r.ok ? r.json() : errorFrom(r).then(function (m) { return { success: false, message: m }; });
-                })
+        function send(modo) {
+            ui.busy(true);
+            ui.hide();
+            return post(form.action, collect(modo))
+                .then(readJson)
                 .then(function (res) {
-                    busy(false);
+                    ui.busy(false);
                     if (!res.success) {
-                        showAlert('danger', escapeHtml(res.message || 'Erro ao gerar o termo.'));
-                        return;
+                        ui.show('danger', escapeHtml(res.message || 'Erro ao gerar o termo.'));
+                        return null;
                     }
-                    showAlert('success',
-                        '<strong><i class="ti ti-check"></i> ' + escapeHtml(res.message) + '</strong><br>' +
-                        '<a href="' + escapeHtml(res.view_url) + '" target="_blank" rel="noopener" class="btn btn-sm btn-success mt-2">' +
-                        '<i class="ti ti-eye"></i> Abrir o PDF</a>');
-                    const statusBadge = document.querySelector('.badge-status strong');
-                    if (statusBadge && res.status_name) statusBadge.textContent = res.status_name;
-                    const userBadge = document.querySelector('.badge-user strong');
-                    if (userBadge && res.user_name) userBadge.textContent = res.user_name;
-                    clearSignature();
+                    return res;
                 })
                 .catch(function (err) {
-                    busy(false);
-                    showAlert('danger', 'Falha na comunicação com o servidor: ' + escapeHtml(err));
+                    ui.busy(false);
+                    ui.show('danger', 'Falha na comunicação com o servidor: ' + escapeHtml(err));
+                    return null;
                 });
+        }
+
+        // Assinatura na tela
+        form.querySelector('#btn-save-termo').addEventListener('click', function () {
+            if (!pad.hasDrawn() && !confirm('O colaborador não assinou na tela. Arquivar o termo sem assinatura, para assinatura manual?')) {
+                return;
+            }
+            send('arquivar').then(function (res) {
+                if (!res) return;
+                ui.show('success',
+                    '<strong><i class="ti ti-check"></i> ' + escapeHtml(res.message) + '</strong><br>' +
+                    '<a href="' + escapeHtml(res.view_url) + '" target="_blank" rel="noopener" class="btn btn-sm btn-success mt-2">' +
+                    '<i class="ti ti-eye"></i> Abrir o PDF</a>');
+                const statusBadge = document.querySelector('.badge-status strong');
+                if (statusBadge && res.status_name) statusBadge.textContent = res.status_name;
+                const userBadge = document.querySelector('.badge-user strong');
+                if (userBadge && res.user_name) userBadge.textContent = res.user_name;
+                pad.clear();
+            });
+        });
+
+        // Envio por e-mail: o colaborador assina pelo link
+        form.querySelector('#btn-send-email').addEventListener('click', function () {
+            send('email').then(function (res) {
+                if (!res) return;
+                ui.show('success', '<strong><i class="ti ti-mail-check"></i> ' + escapeHtml(res.message) + '</strong>');
+                reloadSoon();
+            });
         });
 
         // PDF sem assinatura, para imprimir e assinar no papel (nada é gravado)
-        paperBtn.addEventListener('click', function () {
+        form.querySelector('#btn-print-blank').addEventListener('click', function () {
             const win = window.open('', '_blank');
-            busy(true);
+            ui.busy(true);
             post(form.action, collect('papel'))
                 .then(function (r) {
-                    if (!r.ok) return errorFrom(r).then(function (m) { throw new Error(m); });
+                    if (!r.ok) return readJson(r).then(function (j) { throw new Error(j.message); });
                     return r.blob();
                 })
                 .then(function (blob) {
-                    busy(false);
+                    ui.busy(false);
                     const url = URL.createObjectURL(blob);
                     if (win) {
                         win.location.href = url;
@@ -227,16 +263,90 @@
                     }
                 })
                 .catch(function (err) {
-                    busy(false);
+                    ui.busy(false);
                     if (win) win.close();
-                    showAlert('danger', escapeHtml(err.message || err));
+                    ui.show('danger', escapeHtml(err.message || err));
+                });
+        });
+    }
+
+    // Reenviar / cancelar termos pendentes (delegação: a aba é recriada ao recarregar)
+    document.addEventListener('click', function (ev) {
+        const btn = ev.target.closest('.termo-request-action');
+        if (!btn) return;
+        const acao = btn.dataset.action;
+        if (acao === 'cancelar' && !confirm('Cancelar este termo? O link enviado por e-mail deixa de funcionar.')) {
+            return;
+        }
+        const fd = new FormData();
+        fd.set('id', btn.closest('tr').dataset.request);
+        fd.set('acao', acao);
+        btn.disabled = true;
+        post(btn.dataset.url, fd)
+            .then(readJson)
+            .then(function (res) {
+                btn.disabled = false;
+                const box = document.querySelector('#form-termo-responsabilidade #termo-alert-box');
+                if (box) {
+                    box.className = 'alert alert-' + (res.success ? 'success' : 'danger') + ' mt-3';
+                    box.textContent = res.message || '';
+                } else {
+                    alert(res.message || '');
+                }
+                if (res.reload) reloadSoon();
+            })
+            .catch(function (err) {
+                btn.disabled = false;
+                alert('Falha na comunicação com o servidor: ' + err);
+            });
+    });
+
+    // ------------------------------------------ Página de assinatura pelo link
+    function initSign(form) {
+        if (form.dataset.termoReady) return;
+        form.dataset.termoReady = '1';
+
+        const pad = signaturePad(form);
+        const ui = feedback(form);
+
+        form.querySelector('#btn-sign-termo').addEventListener('click', function () {
+            if (!form.querySelector('#termo-aceite').checked) {
+                ui.show('warning', 'Marque que leu e concorda com o termo.');
+                return;
+            }
+            if (!pad.hasDrawn()) {
+                ui.show('warning', 'Assine no quadro antes de enviar.');
+                return;
+            }
+            const fd = new FormData(form);
+            fd.set('signature_image', pad.png());
+            ui.busy(true);
+            ui.hide();
+            post(form.action, fd)
+                .then(readJson)
+                .then(function (res) {
+                    ui.busy(false);
+                    if (!res.success) {
+                        ui.show('danger', escapeHtml(res.message || 'Erro ao assinar o termo.'));
+                        return;
+                    }
+                    form.querySelectorAll('.termo-clausula-box, .termo-aceite, .termo-signature-area, .termo-actions-bar').forEach(function (el) {
+                        el.hidden = true;
+                    });
+                    ui.show('success', '<strong><i class="ti ti-circle-check"></i> ' + escapeHtml(res.message) + '</strong>');
+                })
+                .catch(function (err) {
+                    ui.busy(false);
+                    ui.show('danger', 'Falha na comunicação com o servidor: ' + escapeHtml(err));
                 });
         });
     }
 
     function scan() {
-        const form = document.getElementById('form-termo-responsabilidade');
-        if (form) initTermo(form);
+        const tab = document.getElementById('form-termo-responsabilidade');
+        if (tab) initTab(tab);
+        const sign = document.getElementById('form-termo-assinatura');
+        if (sign) initSign(sign);
     }
 
     new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });
