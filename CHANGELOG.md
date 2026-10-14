@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Segurança
+- O colaborador do termo (e o novo usuário em "Mover para outra pessoa") é conferido no servidor: precisa estar ativo, dentro da validade e ter perfil na entidade do computador (ou, recursivo, numa entidade acima), a mesma regra da lista da tela. O usuário que já está no equipamento continua aceito, para a devolução de quem foi desativado.
+- PDF de exemplo da configuração: confere o acesso à entidade escolhida.
+- Erros técnicos (PDF de exemplo, servidor de e-mail) vão para o log `php-errors` do GLPI; a tela mostra só uma mensagem genérica.
+- A imagem da assinatura é recusada se tiver dimensões acima de 4000 x 1500 pixels.
+
+### Corrigido
+- Arquivar o termo confere o vínculo do documento com o computador e a atualização do computador. Se algo falhar, o documento criado é apagado (com o arquivo), para a nova tentativa não deixar termo duplicado.
+- Código sequencial (`{seq}`): o número de um termo que não chegou a ser criado (e-mail recusado, falha no PDF) volta para o próximo termo, se ninguém pegou outro número nesse meio-tempo. As validações (e-mail configurado, colaborador com e-mail, assinatura) rodam antes de reservar o número.
+- Desinstalar não apaga mais a numeração do código sequencial: reinstalando, os códigos já emitidos não se repetem.
+- Histórico de termos da aba: os documentos gerados pelo plugin ficam registrados numa tabela própria, sem depender do nome do documento. Os anteriores à atualização continuam achados pelo nome "Termo de ...".
+- Atualização do banco por versão (guardada na configuração do GLPI): cada migração roda uma única vez, sem `ALTER TABLE` a cada instalação.
+
+### Alterado
+- Instalação e desinstalação passaram para o `hook.php`, como o GLPI espera.
+- Requisito de PHP declarado (7.4, o mínimo do GLPI 10.0).
+- Modelo de tradução em `locales/assetterms.pot` (domínio `assetterms`).
+- Verificação de sintaxe (`php -l`) no GitHub Actions com PHP 7.4, 8.1, 8.2 e 8.3; ações dos workflows fixadas por commit.
+
 ## [1.5.0] - 2026-10-05
 
 ### Adicionado

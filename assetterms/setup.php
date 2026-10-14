@@ -34,6 +34,8 @@
 define('PLUGIN_ASSETTERMS_VERSION', '1.5.0');
 define('PLUGIN_ASSETTERMS_MIN_GLPI', '10.0.0');
 define('PLUGIN_ASSETTERMS_MAX_GLPI', '11.0.99');
+// Mínimo do GLPI 10.0. str_contains/str_ends_with vêm do symfony/polyfill-php80, que o GLPI 10 já traz
+define('PLUGIN_ASSETTERMS_MIN_PHP', '7.4');
 
 /**
  * Inicialização: registra a aba nos computadores e carrega CSS e JS na tela do computador
@@ -87,6 +89,9 @@ function plugin_version_assetterms()
                 'min' => PLUGIN_ASSETTERMS_MIN_GLPI,
                 'max' => PLUGIN_ASSETTERMS_MAX_GLPI,
             ],
+            'php'  => [
+                'min' => PLUGIN_ASSETTERMS_MIN_PHP,
+            ],
         ],
     ];
 }
@@ -98,27 +103,5 @@ function plugin_assetterms_check_prerequisites()
 
 function plugin_assetterms_check_config($verbose = false)
 {
-    return true;
-}
-
-/**
- * Cria as tabelas dos termos enviados para assinatura e da configuração por empresa. Os PDFs ficam na aba Documentos do GLPI
- * e continuam lá mesmo se o plugin for removido.
- */
-function plugin_assetterms_install()
-{
-    include_once __DIR__ . '/inc/term.class.php';
-    include_once __DIR__ . '/inc/config.class.php';
-    PluginAssettermsTerm::installSchema();
-    PluginAssettermsConfig::installSchema();
-    return true;
-}
-
-function plugin_assetterms_uninstall()
-{
-    include_once __DIR__ . '/inc/term.class.php';
-    include_once __DIR__ . '/inc/config.class.php';
-    PluginAssettermsTerm::uninstallSchema();
-    PluginAssettermsConfig::uninstallSchema();
     return true;
 }

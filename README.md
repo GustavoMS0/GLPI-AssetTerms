@@ -22,6 +22,8 @@ Ativos › Termos de Responsabilidade › [ NB-COLAB01            ▾ ]
 | **11.0.x** | ✅ |
 | **10.0.x** | ✅ |
 
+PHP 7.4 ou mais novo (o mínimo do GLPI 10.0; o GLPI 11 já exige PHP 8.2).
+
 ---
 
 ## Funcionalidades
@@ -128,6 +130,12 @@ sudo rm -rf /var/www/glpi/plugins/assetterms
 ```
 
 Os PDFs dos termos assinados continuam na aba **Documentos** dos computadores. Só os termos que ainda aguardavam assinatura são descartados.
+
+A tabela `glpi_plugin_assetterms_counters` (números do código sequencial `{seq}`) **não é apagada**: reinstalando o plugin, a numeração continua de onde parou e nenhum código já emitido se repete. Para zerar a numeração de vez, depois de desinstalar:
+
+```bash
+mysql glpi -e 'DROP TABLE glpi_plugin_assetterms_counters;'
+```
 
 No GLPI 11, o plugin ainda aparece em **Configurar › Plugins** como *Erro / para limpar*. Clique em **Limpar** para tirá-lo da lista.
 
@@ -319,6 +327,7 @@ Exemplos:
 - **Recomeçar a numeração a cada ano:** ligado, o primeiro termo de cada ano é o 1. Desligado, a numeração não recomeça.
 - **Cada empresa tem a própria numeração.** Uma filial que herda a configuração da matriz usa a numeração da matriz.
 - **Nenhum número se repete:** dois termos criados ao mesmo tempo recebem números diferentes.
+- **Termo que não chega a ser criado** (e-mail recusado pelo servidor, falha ao gerar ou arquivar o PDF) devolve o número, que vai para o próximo termo. Se outro termo pegou um número nesse meio-tempo, o número devolvido fica sem uso (buraco na numeração), para nenhum termo ter que esperar pelo outro.
 - **O que consome número:**
   - o termo arquivado, o link de assinatura, o envio por e-mail e o PDF para assinar no papel consomem um número;
   - o PDF de exemplo da configuração não consome.
@@ -378,6 +387,10 @@ O texto e os dados da empresa se mudam pela [tela de configuração](#configura�
 | Campos de dados do equipamento | constante `EQUIP_FIELDS` e função `equipmentOptions()` (sugestões) |
 | Acessórios marcados por padrão | constante `CHECKLIST_DEFAULT` |
 | Layout do PDF | função `buildPdf()` |
+
+### Tradução
+
+A interface é escrita em português. Os textos passados por `__('...', 'assetterms')` (domínio `assetterms`, o mesmo nome do plugin) ficam em [`assetterms/locales/assetterms.pot`](assetterms/locales/assetterms.pot). Para traduzir, copie o arquivo para `locales/<idioma>.po` (ex.: `en_GB.po`), traduza e compile com `msgfmt -o locales/en_GB.mo locales/en_GB.po`.
 
 ---
 

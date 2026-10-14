@@ -1,0 +1,26 @@
+# Asset Terms - GLPI plugin
+# Copyright (C) 2026 G. Martins
+# This file is distributed under the same license as the Asset Terms package (GPLv3+).
+#
+# Textos traduzíveis (domínio "assetterms"). A interface do plugin é escrita em português;
+# só os textos passados por __('...', 'assetterms') entram aqui. Para traduzir, copie este
+# arquivo para <idioma>.po (ex.: en_GB.po), traduza e compile para <idioma>.mo com msgfmt.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: Asset Terms\n"
+"Report-Msgid-Bugs-To: https://github.com/GustavoMS0/GLPI-AssetTerms/issues\n"
+"POT-Creation-Date: 2026-10-14 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: inc/term.class.php
+msgid "Termo de Responsabilidade"
+msgstr ""

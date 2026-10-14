@@ -205,6 +205,7 @@ class PluginAssettermsTerm extends CommonGLPI
     public static function installSchema(): void
     {
         global $DB;
+        self::installDocsTable();
         if ($DB->tableExists(self::TABLE)) {
             return;
         }
@@ -231,11 +232,33 @@ class PluginAssettermsTerm extends CommonGLPI
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
     }
 
+    /** Documentos gerados pelo plugin (desde a 1.5.1). Os anteriores são achados pelo nome ("Termo de ...") */
+    public static function installDocsTable(): void
+    {
+        global $DB;
+        if ($DB->tableExists(self::DOCS_TABLE)) {
+            return;
+        }
+        $DB->doQuery("CREATE TABLE `" . self::DOCS_TABLE . "` (
+            `id` int unsigned NOT NULL AUTO_INCREMENT,
+            `documents_id` int unsigned NOT NULL DEFAULT '0',
+            `computers_id` int unsigned NOT NULL DEFAULT '0',
+            `type` varchar(20) NOT NULL DEFAULT 'entrega',
+            `code` varchar(100) NOT NULL DEFAULT '',
+            `date_creation` timestamp NULL DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `documents_id` (`documents_id`),
+            KEY `computers_id` (`computers_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
+    }
+
     public static function uninstallSchema(): void
     {
         global $DB;
-        if ($DB->tableExists(self::TABLE)) {
-            $DB->doQuery('DROP TABLE `' . self::TABLE . '`');
+        foreach ([self::TABLE, self::DOCS_TABLE] as $table) {
+            if ($DB->tableExists($table)) {
+                $DB->doQuery('DROP TABLE `' . $table . '`');
+            }
         }
     }
 
@@ -330,12 +353,15 @@ class PluginAssettermsTerm extends CommonGLPI
      *
      * @return array|string
      */
-    public static function collectInput(array $post)
+    public static function collectInput(array $post, Computer $computer)
     {
         $tipo = ($post['tipo_termo'] ?? '') === 'devolucao' ? 'devolucao' : 'entrega';
         $uid  = (int) ($post['users_id'] ?? 0);
         if (self::userName($uid) === '') {
             return 'Selecione o colaborador.';
+        }
+        if (!self::userAllowedFor($uid, $computer)) {
+            return 'O colaborador escolhido não está ativo ou não tem acesso à entidade deste equipamento.';
         }
         $checklist = [];
         foreach ((array) ($post['checklist'] ?? []) as $key) {
@@ -363,6 +389,44 @@ class PluginAssettermsTerm extends CommonGLPI
             'state_id'    => $state_id,
             'observacoes' => mb_substr(trim((string) ($post['observacoes'] ?? '')), 0, 2000),
         ];
+    }
+
+    /**
+     * O usuário pode ser escolhido para este equipamento? Mesma regra da lista de usuários da aba
+     * (User::dropdown com 'entity' e 'right' => 'all'): ativo, não excluído, dentro do período de
+     * validade e com algum perfil na entidade do equipamento ou, recursivo, numa entidade acima.
+     * O usuário que já está no equipamento sempre vale (ex.: devolução de quem já foi desativado).
+     */
+    public static function userAllowedFor(int $users_id, Computer $computer): bool
+    {
+        global $DB;
+        if ($users_id <= 0) {
+            return false;
+        }
+        if ($users_id === (int) ($computer->fields['users_id'] ?? 0)) {
+            return true;
+        }
+        $user = new User();
+        if (!$user->getFromDB($users_id) || empty($user->fields['is_active']) || !empty($user->fields['is_deleted'])) {
+            return false;
+        }
+        $now = date('Y-m-d H:i:s');
+        if (
+            (!empty($user->fields['begin_date']) && $user->fields['begin_date'] > $now)
+            || (!empty($user->fields['end_date']) && $user->fields['end_date'] < $now)
+        ) {
+            return false;
+        }
+        $entities_id = (int) ($computer->fields['entities_id'] ?? 0);
+        $criteria = [
+            'COUNT' => 'cpt',
+            'FROM'  => 'glpi_profiles_users',
+            'WHERE' => ['users_id' => $users_id] + getEntitiesRestrictCriteria('glpi_profiles_users', '', $entities_id, true),
+        ];
+        foreach ($DB->request($criteria) as $row) {
+            return (int) $row['cpt'] > 0;
+        }
+        return false;
     }
 
     /**
@@ -421,8 +485,22 @@ class PluginAssettermsTerm extends CommonGLPI
         }
         $png  = (string) base64_decode($m[1], true);
         $info = $png !== '' ? @getimagesizefromstring($png) : false;
-        return ($info !== false && ($info['mime'] ?? '') === 'image/png') ? $png : null;
+        if ($info === false || ($info['mime'] ?? '') !== 'image/png') {
+            return null;
+        }
+        // Um PNG pequeno pode declarar dimensões enormes e estourar a memória ao entrar no PDF
+        if ((int) $info[0] < 1 || (int) $info[1] < 1 || (int) $info[0] > self::SIGNATURE_MAX_W || (int) $info[1] > self::SIGNATURE_MAX_H) {
+            return null;
+        }
+        return $png;
     }
+
+    /**
+     * Dimensões máximas (pixels) da imagem da assinatura. O quadro tem até ~1050 x 180 px na tela,
+     * multiplicados pela densidade do monitor (devicePixelRatio, até 3 em celulares e telas 4K).
+     */
+    public const SIGNATURE_MAX_W = 4000;
+    public const SIGNATURE_MAX_H = 1500;
 
     public static function fileName(array $d, int $time): string
     {
@@ -474,26 +552,78 @@ class PluginAssettermsTerm extends CommonGLPI
             throw new RuntimeException('O GLPI recusou o documento. Confira se o tipo PDF está liberado em Configurar > Listas suspensas > Tipos de documento.');
         }
 
-        // Vínculo feito à parte: criando o documento já vinculado, o GLPI 10 troca o nome pelo do computador
-        $link = new Document_Item();
-        $link->add([
-            'documents_id' => $doc_id,
-            'itemtype'     => 'Computer',
-            'items_id'     => (int) $computer->getID(),
-            'entities_id'  => (int) $computer->fields['entities_id'],
-        ]);
+        try {
+            // Vínculo feito à parte: criando o documento já vinculado, o GLPI 10 troca o nome pelo do computador
+            $link = new Document_Item();
+            $linked = $link->add([
+                'documents_id' => $doc_id,
+                'itemtype'     => 'Computer',
+                'items_id'     => (int) $computer->getID(),
+                'entities_id'  => (int) $computer->fields['entities_id'],
+            ]);
+            if (!$linked) {
+                throw new RuntimeException('Não foi possível vincular o documento ao computador.');
+            }
+            self::registerDocument($doc_id, (int) $computer->getID(), $d);
 
-        $update = ['id' => (int) $computer->getID(), 'users_id' => $d['tipo'] === 'entrega' ? (int) $d['colaborador']['id'] : 0];
-        if ((int) $d['state_id'] > 0) {
-            $update['states_id'] = (int) $d['state_id'];
+            $update = ['id' => (int) $computer->getID(), 'users_id' => $d['tipo'] === 'entrega' ? (int) $d['colaborador']['id'] : 0];
+            if ((int) $d['state_id'] > 0) {
+                $update['states_id'] = (int) $d['state_id'];
+            }
+            if (!$computer->update($update)) {
+                throw new RuntimeException('Não foi possível atualizar o usuário e o status do computador.');
+            }
+        } catch (Throwable $e) {
+            // Desfaz o documento (e o arquivo), para uma nova tentativa não deixar termo duplicado
+            self::discardDocument($doc_id);
+            throw $e instanceof RuntimeException ? $e : new RuntimeException('Não foi possível arquivar o termo.', 0, $e);
         }
-        $computer->update($update);
 
         $status = (int) $d['state_id'] > 0 ? (string) Dropdown::getDropdownName('glpi_states', (int) $d['state_id']) : '';
         $msg    = "{$titulo} #{$doc_id} arquivado ({$modo}). Colaborador: {$nome}. Código: {$d['codigo']}." . ($status !== '' ? " Status: {$status}." : '');
         Log::history((int) $computer->getID(), 'Computer', [0, '', $msg], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
 
         return [$doc_id, $status, $pdf];
+    }
+
+    /** Documentos gerados pelo plugin (histórico de termos da aba) */
+    public const DOCS_TABLE = 'glpi_plugin_assetterms_documents';
+
+    /** Registra o documento gerado pelo plugin, para o histórico não depender do nome do documento */
+    private static function registerDocument(int $doc_id, int $computers_id, array $d): void
+    {
+        global $DB;
+        $ok = $DB->insert(self::DOCS_TABLE, self::dbValues([
+            'documents_id'  => $doc_id,
+            'computers_id'  => $computers_id,
+            'type'          => $d['tipo'] === 'devolucao' ? 'devolucao' : 'entrega',
+            'code'          => (string) $d['codigo'],
+            'date_creation' => date('Y-m-d H:i:s'),
+        ]));
+        if (!$ok) {
+            throw new RuntimeException('Não foi possível registrar o documento do termo.');
+        }
+    }
+
+    /**
+     * Apaga de vez um documento criado por archive() que não pôde ser concluído.
+     * O GLPI remove junto os vínculos (Document_Item) e o arquivo, se nenhum outro documento o usa.
+     */
+    public static function discardDocument(int $doc_id): void
+    {
+        global $DB;
+        if ($doc_id <= 0) {
+            return;
+        }
+        try {
+            $DB->delete(self::DOCS_TABLE, ['documents_id' => $doc_id]);
+            $document = new Document();
+            if ($document->getFromDB($doc_id)) {
+                $document->delete(['id' => $doc_id], true);
+            }
+        } catch (Throwable $e) {
+            Toolbox::logInFile('php-errors', 'Asset Terms: falha ao remover o documento #' . $doc_id . ' de um termo não concluído: ' . $e->getMessage() . "\n");
+        }
     }
 
     // ------------------------------------------------- Dados do equipamento
@@ -632,7 +762,7 @@ class PluginAssettermsTerm extends CommonGLPI
                 if ($attachment !== null) {
                     $email->attach($attachment[0], $attachment[1], 'application/pdf');
                 }
-                return $mailer->send() ? null : ($mailer->getError() ?: 'falha no envio');
+                return $mailer->send() ? null : self::mailFailure($to, (string) ($mailer->getError() ?: 'falha no envio'));
             }
 
             // GLPI 10: PHPMailer
@@ -646,10 +776,20 @@ class PluginAssettermsTerm extends CommonGLPI
             if ($attachment !== null) {
                 $mailer->addStringAttachment($attachment[0], $attachment[1], 'base64', 'application/pdf');
             }
-            return $mailer->send() ? null : ($mailer->ErrorInfo ?: 'falha no envio');
+            return $mailer->send() ? null : self::mailFailure($to, (string) ($mailer->ErrorInfo ?: 'falha no envio'));
         } catch (Throwable $e) {
-            return $e->getMessage();
+            return self::mailFailure($to, get_class($e) . ': ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Grava o erro do servidor de e-mail no log do GLPI e devolve uma mensagem genérica:
+     * os detalhes (servidor, porta, resposta SMTP) não vão para a tela.
+     */
+    private static function mailFailure(string $to, string $detail): string
+    {
+        Toolbox::logInFile('php-errors', "Asset Terms: falha ao enviar e-mail para {$to}: {$detail}\n");
+        return 'falha no envio pelo servidor de e-mail (detalhes no log php-errors do GLPI)';
     }
 
     /** Corpo HTML simples para os e-mails do plugin */
@@ -1155,18 +1295,25 @@ class PluginAssettermsTerm extends CommonGLPI
         $or = static fn ($v): string => trim((string) $v) !== '' ? (string) $v : 'Não informado';
         $e  = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-        // Termos já gerados para este equipamento
+        // Termos já gerados para este equipamento: os registrados pelo plugin (desde a 1.5.1) e,
+        // dos documentos anteriores à atualização, os que têm o nome "Termo de ..."
+        $origem = [['NOT' => ['pd.id' => null]]];
+        $legacy = PluginAssettermsConfig::legacyMaxDocumentId();
+        if ($legacy > 0) {
+            $origem[] = ['doc.id' => ['<=', $legacy], 'doc.name' => ['LIKE', 'Termo de %']];
+        }
         $termos = [];
         foreach (
             $DB->request([
                 'SELECT'     => ['doc.id', 'doc.name', 'doc.date_creation', 'doc.comment', 'doc.users_id'],
                 'FROM'       => 'glpi_documents_items AS di',
                 'INNER JOIN' => ['glpi_documents AS doc' => ['ON' => ['di' => 'documents_id', 'doc' => 'id']]],
+                'LEFT JOIN'  => [self::DOCS_TABLE . ' AS pd' => ['ON' => ['pd' => 'documents_id', 'doc' => 'id']]],
                 'WHERE'      => [
                     'di.items_id'    => $cid,
                     'di.itemtype'    => 'Computer',
                     'doc.is_deleted' => 0,
-                    'doc.name'       => ['LIKE', 'Termo de %'],
+                    'OR'             => $origem,
                 ],
                 'ORDER'      => 'doc.date_creation DESC',
             ]) as $d

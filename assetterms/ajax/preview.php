@@ -36,6 +36,10 @@ if (is_string($logo)) {
 }
 
 $eid = (int) ($_POST['entities_id'] ?? 0);
+if (!Session::haveAccessToEntity($eid)) {
+    $json(['success' => false, 'message' => 'Sem permissão para esta entidade.'], 403);
+    return;
+}
 $cfg = PluginAssettermsConfig::getEffective($eid);
 foreach (['company_name', 'company_doc', 'city'] as $field) {
     if ($data[$field] !== '') {
@@ -82,7 +86,8 @@ $dados = PluginAssettermsTerm::withDate([
 try {
     $pdf = PluginAssettermsTerm::buildPdf($dados);
 } catch (Throwable $e) {
-    $json(['success' => false, 'message' => 'Falha ao gerar o PDF: ' . $e->getMessage()], 500);
+    Toolbox::logInFile('php-errors', 'Asset Terms: falha ao gerar o PDF de exemplo: ' . $e->getMessage() . "\n");
+    $json(['success' => false, 'message' => 'Falha ao gerar o PDF de exemplo. Veja o log php-errors do GLPI.'], 500);
     return;
 }
 header('Content-Type: application/pdf');

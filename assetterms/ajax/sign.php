@@ -77,9 +77,11 @@ $dados = PluginAssettermsTerm::withDate($req['data'], $agora) + [
 try {
     [$doc_id, , $pdf] = PluginAssettermsTerm::archive($computer, $dados, $agora);
 } catch (Throwable $e) {
-    // Libera o pedido para uma nova tentativa
+    // Libera o pedido para uma nova tentativa. Se o documento chegou a ser criado, archive() já o
+    // apagou (com o arquivo e o vínculo), então a nova tentativa não deixa termo duplicado.
     $DB->update(PluginAssettermsTerm::TABLE, ['status' => PluginAssettermsTerm::PENDING, 'date_signed' => null, 'sign_ip' => ''], ['id' => (int) $req['id']]);
-    Toolbox::logInFile('php-errors', 'Asset Terms: falha ao arquivar o termo #' . (int) $req['id'] . ': ' . $e->getMessage() . "\n");
+    $causa = $e->getPrevious() !== null ? ' (' . $e->getPrevious()->getMessage() . ')' : '';
+    Toolbox::logInFile('php-errors', 'Asset Terms: falha ao arquivar o termo #' . (int) $req['id'] . ': ' . $e->getMessage() . $causa . "\n");
     $json(['success' => false, 'message' => 'Não foi possível concluir a assinatura agora. Tente de novo em alguns minutos ou fale com a TI.'], 500);
     return;
 }

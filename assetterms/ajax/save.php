@@ -68,8 +68,8 @@ if (($_POST['tipo_termo'] ?? '') === 'status') {
         $novo = (int) ($_POST['users_id_status'] ?? 0);
         $nome = mb_substr(trim(preg_replace('/\s+/u', ' ', (string) ($_POST['nome_status'] ?? ''))), 0, 255);
         $novo_nome = $novo > 0 ? PluginAssettermsTerm::userName($novo) : '';
-        if ($novo > 0 && $novo_nome === '') {
-            $json(['success' => false, 'message' => 'Usuário do GLPI não encontrado.'], 422);
+        if ($novo > 0 && ($novo_nome === '' || !PluginAssettermsTerm::userAllowedFor($novo, $computer))) {
+            $json(['success' => false, 'message' => 'Usuário do GLPI não encontrado, inativo ou sem acesso à entidade deste equipamento.'], 422);
             return;
         }
         if ($novo_nome === '' && $nome === '') {
@@ -99,10 +99,31 @@ if (($_POST['tipo_termo'] ?? '') === 'status') {
 }
 
 $modo = in_array($_POST['modo'] ?? '', ['papel', 'email', 'link'], true) ? $_POST['modo'] : 'arquivar';
-$in   = PluginAssettermsTerm::collectInput($_POST);
+$in   = PluginAssettermsTerm::collectInput($_POST, $computer);
 if (is_string($in)) {
     $json(['success' => false, 'message' => $in], 422);
     return;
+}
+
+// Validações antes de montar o termo: montar reserva o número sequencial do código ({seq})
+if ($modo === 'email') {
+    if (!PluginAssettermsTerm::mailConfigured()) {
+        $json(['success' => false, 'message' => 'O envio de e-mails do GLPI não está configurado. Use "Gerar link de assinatura".'], 422);
+        return;
+    }
+    if (PluginAssettermsTerm::userData($in['users_id'])['email'] === '') {
+        $nome = PluginAssettermsTerm::userName($in['users_id']);
+        $json(['success' => false, 'message' => "{$nome} não tem e-mail cadastrado no GLPI. Cadastre em Administração > Usuários ou use \"Gerar link de assinatura\"."], 422);
+        return;
+    }
+}
+$assinatura = '';
+if ($modo === 'arquivar') {
+    $assinatura = PluginAssettermsTerm::decodeSignature((string) ($_POST['signature_image'] ?? ''));
+    if ($assinatura === null) {
+        $json(['success' => false, 'message' => 'Assinatura inválida.'], 422);
+        return;
+    }
 }
 
 $tech_id = (int) Session::getLoginUserID();
@@ -112,14 +133,6 @@ $titulo  = $dados['tipo'] === 'devolucao' ? 'Termo de Devolução' : 'Termo de E
 
 // ---------------------------------------- Assinatura pelo link (e-mail ou copiado)
 if ($modo === 'email' || $modo === 'link') {
-    if ($modo === 'email' && !PluginAssettermsTerm::mailConfigured()) {
-        $json(['success' => false, 'message' => 'O envio de e-mails do GLPI não está configurado. Use "Gerar link de assinatura".'], 422);
-        return;
-    }
-    if ($modo === 'email' && $dados['colaborador']['email'] === '') {
-        $json(['success' => false, 'message' => "{$dados['colaborador']['nome']} não tem e-mail cadastrado no GLPI. Cadastre em Administração > Usuários ou use \"Gerar link de assinatura\"."], 422);
-        return;
-    }
     $dados['canal'] = $modo;
     $now = date('Y-m-d H:i:s', $agora);
     $DB->insert(PluginAssettermsTerm::TABLE, PluginAssettermsTerm::dbValues([
@@ -145,9 +158,12 @@ if ($modo === 'email' || $modo === 'link') {
         if ($req !== null) {
             $DB->delete(PluginAssettermsTerm::TABLE, ['id' => (int) $req['id']]);
         }
+        // O termo não foi criado: o número sequencial volta, se ninguém pegou outro depois
+        PluginAssettermsConfig::releaseNumber();
         $json(['success' => false, 'message' => "O e-mail não foi enviado: {$err}."], 502);
         return;
     }
+    PluginAssettermsConfig::confirmNumber();
     $como = $modo === 'email' ? "enviado por e-mail ({$dados['colaborador']['email']})" : 'com link de assinatura gerado';
     Log::history($cid, 'Computer', [0, '', "{$titulo} {$como} para assinatura de {$dados['colaborador']['nome']}. Código: {$dados['codigo']}."], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
     if ($modo === 'link') {
@@ -167,14 +183,6 @@ if ($modo === 'email' || $modo === 'link') {
 }
 
 // ------------------------------------------------------- Assinatura na tela
-$assinatura = '';
-if ($modo === 'arquivar') {
-    $assinatura = PluginAssettermsTerm::decodeSignature((string) ($_POST['signature_image'] ?? ''));
-    if ($assinatura === null) {
-        $json(['success' => false, 'message' => 'Assinatura inválida.'], 422);
-        return;
-    }
-}
 $dados = PluginAssettermsTerm::withDate($dados, $agora) + [
     'assinatura' => $assinatura,
     'modo'       => $assinatura !== '' ? 'tela' : 'manual',
@@ -187,14 +195,22 @@ try {
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="' . rawurlencode(PluginAssettermsTerm::fileName($dados, $agora)) . '"');
         header('Cache-Control: no-store');
+        PluginAssettermsConfig::confirmNumber();
         echo $pdf;
         return;
     }
     [$doc_id, $status] = PluginAssettermsTerm::archive($computer, $dados, $agora);
+    PluginAssettermsConfig::confirmNumber();
 } catch (RuntimeException $e) {
+    // Mensagens do próprio plugin (archive); a causa técnica, se houver, vai só para o log
+    PluginAssettermsConfig::releaseNumber();
+    if ($e->getPrevious() !== null) {
+        Toolbox::logInFile('php-errors', 'Asset Terms: falha ao arquivar o termo: ' . $e->getPrevious()->getMessage() . "\n");
+    }
     $json(['success' => false, 'message' => $e->getMessage()], 500);
     return;
 } catch (Throwable $e) {
+    PluginAssettermsConfig::releaseNumber();
     Toolbox::logInFile('php-errors', 'Asset Terms: falha ao gerar o PDF: ' . $e->getMessage() . "\n");
     $json(['success' => false, 'message' => 'Falha ao gerar o PDF. Veja o log php-errors do GLPI.'], 500);
     return;

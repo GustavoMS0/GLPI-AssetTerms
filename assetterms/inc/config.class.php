@@ -103,6 +103,7 @@ class PluginAssettermsConfig extends CommonGLPI
                 $DB->doQuery('ALTER TABLE `' . self::TABLE . "` ADD `{$field}` {$definition}");
             }
         }
+        // A tabela de contadores continua depois de desinstalar (ver uninstallSchema): se já existe, é mantida
         if (!$DB->tableExists(self::COUNTERS)) {
             $DB->doQuery("CREATE TABLE `" . self::COUNTERS . "` (
                 `entities_id` int unsigned NOT NULL DEFAULT '0',
@@ -111,20 +112,83 @@ class PluginAssettermsConfig extends CommonGLPI
                 PRIMARY KEY (`entities_id`, `year`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
         }
-        // Códigos personalizados podem ser maiores que os aleatórios (até 1.3.0 eram 14 caracteres)
-        if ($DB->tableExists(PluginAssettermsTerm::TABLE)) {
-            $DB->doQuery('ALTER TABLE `' . PluginAssettermsTerm::TABLE . "` MODIFY `code` varchar(100) NOT NULL DEFAULT ''");
+        self::migrate();
+    }
+
+    // ------------------------------------------------------------ Migrações
+
+    /** Contexto da configuração do plugin em glpi_configs (versão do banco e outros valores internos) */
+    public const CONFIG_CONTEXT = 'plugin:assetterms';
+
+    /**
+     * Versão atual do banco do plugin. Cada passo de migrate() roda uma única vez, em ordem:
+     *   1 = 1.4.0: código do termo com até 100 caracteres
+     *   2 = 1.5.1: tabela dos documentos gerados (histórico sem depender do nome do documento)
+     */
+    public const SCHEMA_VERSION = 2;
+
+    private static function schemaVersion(): int
+    {
+        $values = Config::getConfigurationValues(self::CONFIG_CONTEXT, ['schema_version']);
+        return (int) ($values['schema_version'] ?? 0);
+    }
+
+    /** Roda os passos de migração que faltam, a partir da versão gravada na configuração */
+    private static function migrate(): void
+    {
+        global $DB;
+        $version = self::schemaVersion();
+
+        if ($version < 1) {
+            // Códigos personalizados podem ser maiores que os aleatórios (até 1.3.0 eram 14 caracteres)
+            if ($DB->tableExists(PluginAssettermsTerm::TABLE) && self::columnType(PluginAssettermsTerm::TABLE, 'code') !== 'varchar(100)') {
+                $DB->doQuery('ALTER TABLE `' . PluginAssettermsTerm::TABLE . "` MODIFY `code` varchar(100) NOT NULL DEFAULT ''");
+            }
+        }
+
+        if ($version < 2) {
+            PluginAssettermsTerm::installDocsTable();
+            // Documentos gerados antes desta versão não estão na tabela: o histórico os acha pelo nome
+            // ("Termo de ..."), mas só até o último documento que existia no momento da atualização
+            $result = $DB->doQuery('SELECT MAX(`id`) AS max_id FROM `glpi_documents`');
+            $max    = $result ? (int) ($result->fetch_assoc()['max_id'] ?? 0) : 0;
+            Config::setConfigurationValues(self::CONFIG_CONTEXT, ['legacy_max_documents_id' => $max]);
+        }
+
+        if ($version < self::SCHEMA_VERSION) {
+            Config::setConfigurationValues(self::CONFIG_CONTEXT, ['schema_version' => self::SCHEMA_VERSION]);
         }
     }
 
+    /** Tipo de uma coluna, em minúsculas (ex.: varchar(100)), ou '' se não existir */
+    private static function columnType(string $table, string $field): string
+    {
+        global $DB;
+        $result = $DB->doQuery('SHOW COLUMNS FROM `' . $table . "` LIKE '" . $DB->escape($field) . "'");
+        $row = $result ? $result->fetch_assoc() : null;
+        return strtolower((string) ($row['Type'] ?? ''));
+    }
+
+    /** Último documento que pode ser um termo anterior à 1.5.1 (achado pelo nome), ou 0 */
+    public static function legacyMaxDocumentId(): int
+    {
+        $values = Config::getConfigurationValues(self::CONFIG_CONTEXT, ['legacy_max_documents_id']);
+        return (int) ($values['legacy_max_documents_id'] ?? 0);
+    }
+
+    /**
+     * Remove a configuração das empresas. A tabela de contadores do código sequencial é mantida:
+     * reinstalar o plugin continua a numeração, e um código {seq} já emitido (ISO) não se repete.
+     * Para zerar a numeração, apague a tabela glpi_plugin_assetterms_counters à mão (ver README).
+     */
     public static function uninstallSchema(): void
     {
         global $DB;
-        foreach ([self::TABLE, self::COUNTERS] as $table) {
-            if ($DB->tableExists($table)) {
-                $DB->doQuery('DROP TABLE `' . $table . '`');
-            }
+        if ($DB->tableExists(self::TABLE)) {
+            $DB->doQuery('DROP TABLE `' . self::TABLE . '`');
         }
+        // As tabelas foram apagadas: na próxima instalação as migrações rodam de novo
+        Config::deleteConfigurationValues(self::CONFIG_CONTEXT, ['schema_version', 'legacy_max_documents_id']);
     }
 
     // ------------------------------------------------------ Texto padrão
@@ -280,6 +344,9 @@ class PluginAssettermsConfig extends CommonGLPI
         return 1;
     }
 
+    /** Último número reservado nesta requisição: [entidade, ano, número] (ver releaseNumber) */
+    private static ?array $reserved = null;
+
     /** Reserva o próximo número (atômico: dois termos ao mesmo tempo nunca recebem o mesmo) */
     public static function nextNumber(array $cfg, int $time): int
     {
@@ -288,7 +355,32 @@ class PluginAssettermsConfig extends CommonGLPI
         $DB->doQuery('INSERT INTO `' . self::COUNTERS . "` (`entities_id`, `year`, `value`) VALUES ({$entity}, {$year}, LAST_INSERT_ID(1))
             ON DUPLICATE KEY UPDATE `value` = LAST_INSERT_ID(`value` + 1)");
         $result = $DB->doQuery('SELECT LAST_INSERT_ID() AS v');
-        return (int) ($result->fetch_assoc()['v'] ?? 0);
+        $number = (int) ($result->fetch_assoc()['v'] ?? 0);
+        self::$reserved = $number > 0 ? [$entity, $year, $number] : null;
+        return $number;
+    }
+
+    /**
+     * Devolve o número reservado por nextNumber() quando o termo não chegou a ser criado
+     * (falha no e-mail, no PDF ou ao arquivar), para não ficar buraco na numeração.
+     * Atômico: só volta o contador se ninguém reservou outro número depois; nesse caso o
+     * buraco é inevitável sem bloquear os outros termos e o número simplesmente não é usado.
+     */
+    public static function releaseNumber(): void
+    {
+        global $DB;
+        if (self::$reserved === null) {
+            return;
+        }
+        [$entity, $year, $number] = self::$reserved;
+        self::$reserved = null;
+        $DB->update(self::COUNTERS, ['value' => $number - 1], ['entities_id' => $entity, 'year' => $year, 'value' => $number]);
+    }
+
+    /** O número reservado foi usado (termo gravado): não pode mais ser devolvido */
+    public static function confirmNumber(): void
+    {
+        self::$reserved = null;
     }
 
     /** Define o próximo número (para continuar uma numeração que já existe) */
