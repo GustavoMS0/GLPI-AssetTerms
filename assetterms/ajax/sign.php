@@ -25,6 +25,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     return;
 }
 
+$csrf_token = $_SERVER['HTTP_X_GLPI_CSRF_TOKEN'] ?? ($_POST['_glpi_csrf_token'] ?? '');
+if (!Session::validateIDOR(['_glpi_csrf_token' => $csrf_token])) {
+    $json(['success' => false, 'message' => 'Token CSRF inválido ou ausente.'], 403);
+    return;
+}
+
 $req = PluginAssettermsTerm::getRequest((int) ($_POST['id'] ?? 0));
 $me  = (int) Session::getLoginUserID();
 if ($req === null || (int) $req['users_id'] !== $me) {

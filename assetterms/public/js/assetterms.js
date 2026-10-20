@@ -97,12 +97,44 @@
         const wrapper = form.querySelector('.canvas-wrapper');
         const ctx = canvas.getContext('2d');
         let drawing = false;
-        let hasDrawn = false;
         let sized = false;
+        let strokes = [];
+        let currentStroke = null;
+        let lastCssWidth = 0;
+        let lastCssHeight = 0;
+
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!strokes.length) {
+                wrapper.classList.remove('has-signature');
+                return;
+            }
+            wrapper.classList.add('has-signature');
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#1e293b';
+
+            for (let i = 0; i < strokes.length; i++) {
+                const pts = strokes[i].points;
+                if (!pts || !pts.length) continue;
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                if (pts.length === 1) {
+                    ctx.lineTo(pts[0].x + 0.1, pts[0].y + 0.1);
+                } else {
+                    for (let j = 1; j < pts.length; j++) {
+                        ctx.lineTo(pts[j].x, pts[j].y);
+                    }
+                }
+                ctx.stroke();
+            }
+        }
 
         function clear() {
+            strokes = [];
+            currentStroke = null;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            hasDrawn = false;
             wrapper.classList.remove('has-signature');
         }
 
@@ -111,28 +143,44 @@
             if (!rect.width) return;
             sized = true;
             const dpr = window.devicePixelRatio || 1;
+
+            if (lastCssWidth > 0 && lastCssWidth !== rect.width && strokes.length) {
+                const scaleX = rect.width / lastCssWidth;
+                const scaleY = rect.height / (lastCssHeight || rect.height);
+                for (let i = 0; i < strokes.length; i++) {
+                    const pts = strokes[i].points;
+                    for (let j = 0; j < pts.length; j++) {
+                        pts[j].x *= scaleX;
+                        pts[j].y *= scaleY;
+                    }
+                }
+            }
+            lastCssWidth = rect.width;
+            lastCssHeight = rect.height;
+
             canvas.width = Math.round(rect.width * dpr);
             canvas.height = Math.round(rect.height * dpr);
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            ctx.lineWidth = 2.5;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.strokeStyle = '#1e293b';
-            clear();
+            redraw();
         }
 
         function pos(e) {
             const rect = canvas.getBoundingClientRect();
-            const p = e.touches ? e.touches[0] : e;
-            return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
         }
 
         function start(e) {
             if (!sized) setup();
             drawing = true;
-            hasDrawn = true;
-            wrapper.classList.add('has-signature');
+            try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
             const p = pos(e);
+            currentStroke = { points: [p] };
+            strokes.push(currentStroke);
+            wrapper.classList.add('has-signature');
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#1e293b';
             ctx.beginPath();
             ctx.moveTo(p.x, p.y);
             ctx.lineTo(p.x + 0.1, p.y + 0.1);
@@ -141,34 +189,47 @@
         }
 
         function move(e) {
-            if (!drawing) return;
+            if (!drawing || !currentStroke) return;
             const p = pos(e);
+            currentStroke.points.push(p);
             ctx.lineTo(p.x, p.y);
             ctx.stroke();
             if (e.cancelable) e.preventDefault();
         }
 
-        function end() {
+        function end(e) {
+            if (!drawing) return;
             drawing = false;
+            currentStroke = null;
+            try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
         }
 
-        canvas.addEventListener('mousedown', start);
-        canvas.addEventListener('mousemove', move);
-        window.addEventListener('mouseup', end);
-        canvas.addEventListener('touchstart', start, { passive: false });
-        canvas.addEventListener('touchmove', move, { passive: false });
-        canvas.addEventListener('touchend', end);
-        canvas.addEventListener('touchcancel', end);
+        if (window.PointerEvent) {
+            canvas.addEventListener('pointerdown', start);
+            canvas.addEventListener('pointermove', move);
+            canvas.addEventListener('pointerup', end);
+            canvas.addEventListener('pointercancel', end);
+        } else {
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', end);
+            canvas.addEventListener('touchstart', start, { passive: false });
+            canvas.addEventListener('touchmove', move, { passive: false });
+            canvas.addEventListener('touchend', end);
+            canvas.addEventListener('touchcancel', end);
+        }
+
         form.querySelector('#btn-clear-signature').addEventListener('click', clear);
 
-        // Redimensionar apaga o desenho; só refaz se ainda não houver assinatura
+        let resizeTimer = null;
         window.addEventListener('resize', function () {
-            if (!hasDrawn) setup();
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(setup, 150);
         });
         setup();
 
         return {
-            hasDrawn: function () { return hasDrawn; },
+            hasDrawn: function () { return strokes.length > 0; },
             clear: clear,
             // Exporta com fundo branco: o PDF não depende de transparência
             png: function () {
