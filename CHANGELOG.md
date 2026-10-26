@@ -1,19 +1,29 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.1] - 2026-10-26
+
+### Adicionado
+- **Assinatura Eletrônica Digitada:** opção de assinar digitando o nome completo do usuário autenticado no GLPI, com seleção de estilos tipográficos e chancela eletrônica com trilha de auditoria (ID do usuário, IP, timestamp e conformidade com a Lei Federal nº 14.063/2020).
+- **Recorte Automático de Assinatura (Bounding-Box Crop):** otimização da área útil da assinatura ao exportar para o PDF, garantindo nitidez e proporção adequada sem margens laterais vazias.
+- **Suavização Vetorial Bézier:** interpolação de curvas suaves quadráticas no canvas manual de assinatura.
+- **Suporte a Redimensionamento Dinâmico (ResizeObserver):** correção da inicialização do canvas ao alternar abas inativas ou monitores Retina/4K.
 
 ### Segurança
+- Validação estrita de tokens CSRF em `front/config.php` e no endpoint de pré-visualização `ajax/preview.php`.
 - O colaborador do termo (e o novo usuário em "Mover para outra pessoa") é conferido no servidor: precisa estar ativo, dentro da validade e ter perfil na entidade do computador (ou, recursivo, numa entidade acima), a mesma regra da lista da tela. O usuário que já está no equipamento continua aceito, para a devolução de quem foi desativado.
 - PDF de exemplo da configuração: confere o acesso à entidade escolhida.
-- Erros técnicos (PDF de exemplo, servidor de e-mail) vão para o log `php-errors` do GLPI; a tela mostra só uma mensagem genérica.
+- Erros técnicos vão para o log `php-errors` do GLPI; a tela mostra apenas mensagem genérica.
 - A imagem da assinatura é recusada se tiver dimensões acima de 4000 x 1500 pixels.
 
 ### Corrigido
-- Arquivar o termo confere o vínculo do documento com o computador e a atualização do computador. Se algo falhar, o documento criado é apagado (com o arquivo), para a nova tentativa não deixar termo duplicado.
-- Código sequencial (`{seq}`): o número de um termo que não chegou a ser criado (e-mail recusado, falha no PDF) volta para o próximo termo, se ninguém pegou outro número nesse meio-tempo. As validações (e-mail configurado, colaborador com e-mail, assinatura) rodam antes de reservar o número.
-- Desinstalar não apaga mais a numeração do código sequencial: reinstalando, os códigos já emitidos não se repetem.
-- Histórico de termos da aba: os documentos gerados pelo plugin ficam registrados numa tabela própria, sem depender do nome do documento. Os anteriores à atualização continuam achados pelo nome "Termo de ...".
-- Atualização do banco por versão (guardada na configuração do GLPI): cada migração roda uma única vez, sem `ALTER TABLE` a cada instalação.
+- Autocriação de esquema (self-healing) para a tabela `glpi_plugin_assetterms_documents` na renderização da aba do computador.
+- Remoção de escape redundante de dados em instalações GLPI 10.
+- Arquivar o termo confere o vínculo do documento com o computador e a atualização do computador. Se algo falhar, o documento criado é apagado para evitar termos duplicados.
+- Código sequencial (`{seq}`): o número de um termo não concluído retorna para o próximo termo.
+- Desinstalar preserva a numeração do código sequencial.
+- Histórico de termos da aba: os documentos gerados pelo plugin ficam registrados numa tabela própria, sem depender do nome do documento.
+- Atualização do banco por versão (guardada na configuração do GLPI): cada migração roda uma única vez.
+- Compatibilidade de cores com Dark Mode do GLPI 10 (Tabler UI / Auror).
 
 ### Alterado
 - Instalação e desinstalação passaram para o `hook.php`, como o GLPI espera.
