@@ -23,6 +23,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !Session::haveRight('config
     return;
 }
 
+$csrf_token = $_SERVER['HTTP_X_GLPI_CSRF_TOKEN'] ?? ($_POST['_glpi_csrf_token'] ?? '');
+if (!Session::validateIDOR(['_glpi_csrf_token' => $csrf_token])) {
+    $json(['success' => false, 'message' => 'Token CSRF inválido ou ausente.'], 403);
+    return;
+}
+
 $data = PluginAssettermsConfig::collect($_POST);
 if (is_string($data)) {
     $json(['success' => false, 'message' => $data], 422);

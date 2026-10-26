@@ -263,19 +263,10 @@ class PluginAssettermsTerm extends CommonGLPI
     }
 
     /**
-     * Valores para $DB->insert/update. O GLPI 11 escapa sozinho; o GLPI 10 espera os
-     * valores já escapados (como chegam de um formulário).
+     * Valores para $DB->insert/update.
      */
     public static function dbValues(array $values): array
     {
-        global $DB;
-        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
-            foreach ($values as $k => $v) {
-                if (is_string($v)) {
-                    $values[$k] = $DB->escape($v);
-                }
-            }
-        }
         return $values;
     }
 
@@ -1297,6 +1288,9 @@ class PluginAssettermsTerm extends CommonGLPI
 
         // Termos já gerados para este equipamento: os registrados pelo plugin (desde a 1.5.1) e,
         // dos documentos anteriores à atualização, os que têm o nome "Termo de ..."
+        if (!$DB->tableExists(self::DOCS_TABLE)) {
+            self::installDocsTable();
+        }
         $origem = [['NOT' => ['pd.id' => null]]];
         $legacy = PluginAssettermsConfig::legacyMaxDocumentId();
         if ($legacy > 0) {

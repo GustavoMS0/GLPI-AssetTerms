@@ -259,9 +259,9 @@
 
 .canvas-wrapper {
     position: relative;
-    border: 2px dashed #cbd5e1;
-    border-radius: 8px;
-    background: #fafafa;
+    border: 2px dashed var(--tblr-border-color, #cbd5e1);
+    border-radius: var(--tblr-border-radius, 8px);
+    background: var(--tblr-card-bg, #ffffff);
     overflow: hidden;
     height: 180px;
     cursor: crosshair;
@@ -279,7 +279,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    color: #94a3b8;
+    color: var(--tblr-secondary, #94a3b8);
     font-size: 0.875rem;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -440,10 +440,11 @@
 .termo-config-help {
     margin: 16px 0 4px;
     padding: 10px 14px;
-    border-radius: 6px;
-    background: #f1f5f9;
+    border-radius: var(--tblr-border-radius, 6px);
+    background: var(--tblr-bg-surface-secondary, #f1f5f9);
+    border: 1px solid var(--tblr-border-color, #e2e8f0);
     font-size: 0.82rem;
-    color: #475569;
+    color: var(--tblr-body-color, #475569);
 }
 
 .termo-config-text textarea {

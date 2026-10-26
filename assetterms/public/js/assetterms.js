@@ -121,11 +121,16 @@
                 ctx.beginPath();
                 ctx.moveTo(pts[0].x, pts[0].y);
                 if (pts.length === 1) {
-                    ctx.lineTo(pts[0].x + 0.1, pts[0].y + 0.1);
+                    ctx.lineTo(pts[0].x + 0.5, pts[0].y + 0.5);
+                } else if (pts.length === 2) {
+                    ctx.lineTo(pts[1].x, pts[1].y);
                 } else {
-                    for (let j = 1; j < pts.length; j++) {
-                        ctx.lineTo(pts[j].x, pts[j].y);
+                    for (let j = 1; j < pts.length - 1; j++) {
+                        const midX = (pts[j].x + pts[j + 1].x) / 2;
+                        const midY = (pts[j].y + pts[j + 1].y) / 2;
+                        ctx.quadraticCurveTo(pts[j].x, pts[j].y, midX, midY);
                     }
+                    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
                 }
                 ctx.stroke();
             }
@@ -140,9 +145,9 @@
 
         function setup() {
             const rect = canvas.getBoundingClientRect();
-            if (!rect.width) return;
+            if (!rect.width || !rect.height) return;
             sized = true;
-            const dpr = window.devicePixelRatio || 1;
+            const dpr = Math.max(window.devicePixelRatio || 1, 2);
 
             if (lastCssWidth > 0 && lastCssWidth !== rect.width && strokes.length) {
                 const scaleX = rect.width / lastCssWidth;
@@ -164,6 +169,17 @@
             redraw();
         }
 
+        if (window.ResizeObserver) {
+            const ro = new ResizeObserver(function (entries) {
+                for (let i = 0; i < entries.length; i++) {
+                    if (entries[i].contentRect.width > 0 && (!sized || entries[i].contentRect.width !== lastCssWidth)) {
+                        setup();
+                    }
+                }
+            });
+            ro.observe(wrapper);
+        }
+
         function pos(e) {
             const rect = canvas.getBoundingClientRect();
             return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -183,7 +199,7 @@
             ctx.strokeStyle = '#1e293b';
             ctx.beginPath();
             ctx.moveTo(p.x, p.y);
-            ctx.lineTo(p.x + 0.1, p.y + 0.1);
+            ctx.lineTo(p.x + 0.5, p.y + 0.5);
             ctx.stroke();
             if (e.cancelable) e.preventDefault();
         }
@@ -191,9 +207,26 @@
         function move(e) {
             if (!drawing || !currentStroke) return;
             const p = pos(e);
-            currentStroke.points.push(p);
-            ctx.lineTo(p.x, p.y);
-            ctx.stroke();
+            const pts = currentStroke.points;
+            pts.push(p);
+
+            if (pts.length > 2) {
+                const prevMid = {
+                    x: (pts[pts.length - 3].x + pts[pts.length - 2].x) / 2,
+                    y: (pts[pts.length - 3].y + pts[pts.length - 2].y) / 2
+                };
+                const mid = {
+                    x: (pts[pts.length - 2].x + p.x) / 2,
+                    y: (pts[pts.length - 2].y + p.y) / 2
+                };
+                ctx.beginPath();
+                ctx.moveTo(prevMid.x, prevMid.y);
+                ctx.quadraticCurveTo(pts[pts.length - 2].x, pts[pts.length - 2].y, mid.x, mid.y);
+                ctx.stroke();
+            } else {
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+            }
             if (e.cancelable) e.preventDefault();
         }
 
@@ -202,6 +235,7 @@
             drawing = false;
             currentStroke = null;
             try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+            redraw();
         }
 
         if (window.PointerEvent) {
@@ -219,7 +253,11 @@
             canvas.addEventListener('touchcancel', end);
         }
 
-        form.querySelector('#btn-clear-signature').addEventListener('click', clear);
+        form.querySelector('#btn-clear-signature').addEventListener('click', function () {
+            if (!strokes.length || confirm('Limpar a assinatura do quadro?')) {
+                clear();
+            }
+        });
 
         let resizeTimer = null;
         window.addEventListener('resize', function () {
@@ -231,15 +269,37 @@
         return {
             hasDrawn: function () { return strokes.length > 0; },
             clear: clear,
-            // Exporta com fundo branco: o PDF não depende de transparência
+            // Exporta recortado (Bounding Box Trim) com proporção ideal para o PDF
             png: function () {
+                if (!strokes.length) return '';
+                const dpr = Math.max(window.devicePixelRatio || 1, 2);
+
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                strokes.forEach(function (s) {
+                    s.points.forEach(function (p) {
+                        if (p.x < minX) minX = p.x;
+                        if (p.y < minY) minY = p.y;
+                        if (p.x > maxX) maxX = p.x;
+                        if (p.y > maxY) maxY = p.y;
+                    });
+                });
+
+                const pad = 16;
+                const cropX = Math.max(0, Math.floor((minX - pad) * dpr));
+                const cropY = Math.max(0, Math.floor((minY - pad) * dpr));
+                const cropW = Math.min(canvas.width - cropX, Math.ceil((maxX - minX + pad * 2) * dpr));
+                const cropH = Math.min(canvas.height - cropY, Math.ceil((maxY - minY + pad * 2) * dpr));
+
+                if (cropW <= 0 || cropH <= 0) return '';
+
                 const out = document.createElement('canvas');
-                out.width = canvas.width;
-                out.height = canvas.height;
+                out.width = cropW;
+                out.height = cropH;
                 const o = out.getContext('2d');
                 o.fillStyle = '#ffffff';
-                o.fillRect(0, 0, out.width, out.height);
-                o.drawImage(canvas, 0, 0);
+                o.fillRect(0, 0, cropW, cropH);
+                o.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
                 return out.toDataURL('image/png');
             },
         };
@@ -483,7 +543,6 @@
         form.querySelectorAll('.termo-config-preview').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 const fd = new FormData(form);
-                fd.delete('_glpi_csrf_token');
                 fd.set('preview_tipo', btn.dataset.tipo);
                 const win = window.open('', '_blank');
                 btn.disabled = true;

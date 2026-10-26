@@ -30,6 +30,8 @@ if (!Session::haveAccessToEntity($eid)) {
 
 // ----------------------------------------------------------------- Gravação
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    Session::checkCSRF($_POST);
+
     if (isset($_POST['restore'])) {
         PluginAssettermsConfig::delete($eid);
         Session::addMessageAfterRedirect('Configuração removida. Esta entidade passa a usar a da entidade acima ou o texto padrão.', true, INFO);
