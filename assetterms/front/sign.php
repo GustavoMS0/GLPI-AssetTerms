@@ -87,6 +87,7 @@ if ($req === null || (int) $req['users_id'] !== $me) {
           data-client-ip="<?= $e($client_ip) ?>"
           onsubmit="return false;">
         <input type="hidden" name="id" value="<?= (int) $req['id'] ?>">
+        <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
         <div class="termo-clausula-box">
             <strong><?= $e($texto['titulo']) ?></strong>

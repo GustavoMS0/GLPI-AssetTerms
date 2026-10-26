@@ -1351,6 +1351,7 @@ class PluginAssettermsTerm extends CommonGLPI
                   data-client-ip="<?= $e($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1') ?>"
                   onsubmit="return false;">
                 <input type="hidden" name="computers_id" value="<?= $cid ?>">
+                <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
                 <h4 class="section-title"><i class="ti ti-forms"></i> O que você quer fazer?</h4>
 

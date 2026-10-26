@@ -37,7 +37,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 $csrf_token = $_SERVER['HTTP_X_GLPI_CSRF_TOKEN'] ?? ($_POST['_glpi_csrf_token'] ?? '');
-if (!Session::validateIDOR(['_glpi_csrf_token' => $csrf_token])) {
+if (!empty($csrf_token)) {
+    $_POST['_glpi_csrf_token'] = $csrf_token;
+}
+try {
+    Session::checkCSRF($_POST);
+} catch (\Throwable $e) {
     $json(['success' => false, 'message' => 'Token CSRF inválido ou ausente.'], 403);
     return;
 }

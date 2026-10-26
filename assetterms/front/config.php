@@ -92,6 +92,7 @@ $t = $effective['texts'];
 <form id="form-assetterms-config" class="termo-card" method="post" action="<?= $e($self) ?>" enctype="multipart/form-data"
       data-preview="<?= $e(PluginAssettermsTerm::webPath() . '/ajax/preview.php') ?>">
     <input type="hidden" name="entities_id" value="<?= $eid ?>">
+    <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
     <h4 class="section-title"><i class="ti ti-building"></i> Empresa</h4>
     <div class="termo-config-grid">
