@@ -1345,7 +1345,11 @@ class PluginAssettermsTerm extends CommonGLPI
             </div>
 
             <?php if ($can_edit): ?>
-            <form id="form-termo-responsabilidade" class="termo-card" method="post" action="<?= $e($base . '/ajax/save.php') ?>" onsubmit="return false;">
+            <form id="form-termo-responsabilidade" class="termo-card" method="post" action="<?= $e($base . '/ajax/save.php') ?>"
+                  data-user-name="<?= $e($user_name) ?>"
+                  data-user-id="<?= $user_id ?>"
+                  data-client-ip="<?= $e($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1') ?>"
+                  onsubmit="return false;">
                 <input type="hidden" name="computers_id" value="<?= $cid ?>">
 
                 <h4 class="section-title"><i class="ti ti-forms"></i> O que você quer fazer?</h4>
@@ -1488,15 +1492,53 @@ class PluginAssettermsTerm extends CommonGLPI
                 <?php endforeach; ?>
 
                 <div class="termo-signature-area" data-mode="termo">
-                    <div class="signature-header">
-                        <label class="termo-label"><i class="ti ti-writing"></i> Assinatura do colaborador, se ele estiver presente</label>
-                        <button type="button" id="btn-clear-signature" class="btn btn-sm btn-outline-secondary">
-                            <i class="ti ti-eraser"></i> Limpar
-                        </button>
+                    <div class="termo-signature-tabs mb-2">
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Modo de assinatura">
+                            <button type="button" class="btn btn-outline-primary active btn-sig-mode" data-mode="draw">
+                                <i class="ti ti-pencil"></i> Desenhar assinatura
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sig-mode" data-mode="type">
+                                <i class="ti ti-keyboard"></i> Digitar nome
+                            </button>
+                        </div>
                     </div>
-                    <div class="canvas-wrapper">
-                        <canvas id="signature-canvas"></canvas>
-                        <div class="canvas-placeholder">Assine aqui</div>
+
+                    <div class="sig-draw-container">
+                        <div class="signature-header">
+                            <label class="termo-label"><i class="ti ti-writing"></i> Assinatura do colaborador, se ele estiver presente</label>
+                            <button type="button" id="btn-clear-signature" class="btn btn-sm btn-outline-secondary">
+                                <i class="ti ti-eraser"></i> Limpar
+                            </button>
+                        </div>
+                        <div class="canvas-wrapper">
+                            <canvas id="signature-canvas"></canvas>
+                            <div class="canvas-placeholder">Assine aqui</div>
+                        </div>
+                    </div>
+
+                    <div class="sig-type-container" style="display: none;">
+                        <div class="signature-header">
+                            <label class="termo-label" for="sig-type-input"><i class="ti ti-signature"></i> Nome completo para assinatura eletrônica</label>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-sm-8">
+                                <input type="text" id="sig-type-input" class="form-control" placeholder="Nome completo do colaborador" value="<?= $e($user_name) ?>" autocomplete="name">
+                            </div>
+                            <div class="col-sm-4">
+                                <select id="sig-type-font" class="form-select">
+                                    <option value="cursive1">Cursiva Elegante</option>
+                                    <option value="cursive2">Caligráfica Moderna</option>
+                                    <option value="formal">Formal / Serif</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="sig-type-preview-card">
+                            <div id="sig-type-preview-text" class="sig-font-cursive1"><?= $e($user_name) ?></div>
+                            <div class="sig-type-metadata">
+                                <i class="ti ti-shield-check text-success"></i> 
+                                <span>Assinatura Eletrônica Autenticada • GLPI ID #<?= (int)$user_id ?> • IP: <?= $e($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1') ?></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

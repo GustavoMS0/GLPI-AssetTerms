@@ -51,10 +51,12 @@ if ($req === null || (int) $req['users_id'] !== $me) {
     echo '<div class="termo-card"><h3 class="termo-title"><i class="ti ti-circle-x text-danger"></i> Termo cancelado</h3>'
         . '<p>A TI cancelou este termo. Se tiver dúvidas, fale com a equipe de TI.</p></div>';
 } else {
-    $d     = $req['data'];
-    $eq    = $d['equipamento'];
-    $texto = PluginAssettermsTerm::textoFor($d);
-    $acao  = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
+    $d         = $req['data'];
+    $eq        = $d['equipamento'];
+    $texto     = PluginAssettermsTerm::textoFor($d);
+    $acao      = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
+    $user_name = PluginAssettermsTerm::userName($me);
+    $client_ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     ?>
     <div class="termo-card termo-header-card">
         <h3 class="termo-title"><i class="ti ti-file-certificate"></i> <?= $e($texto['titulo']) ?></h3>
@@ -79,7 +81,11 @@ if ($req === null || (int) $req['users_id'] !== $me) {
     </div>
 
     <form id="form-termo-assinatura" class="termo-card" method="post"
-          action="<?= $e(PluginAssettermsTerm::webPath() . '/ajax/sign.php') ?>" onsubmit="return false;">
+          action="<?= $e(PluginAssettermsTerm::webPath() . '/ajax/sign.php') ?>"
+          data-user-name="<?= $e($user_name) ?>"
+          data-user-id="<?= $me ?>"
+          data-client-ip="<?= $e($client_ip) ?>"
+          onsubmit="return false;">
         <input type="hidden" name="id" value="<?= (int) $req['id'] ?>">
 
         <div class="termo-clausula-box">
@@ -97,15 +103,53 @@ if ($req === null || (int) $req['users_id'] !== $me) {
         </label>
 
         <div class="termo-signature-area">
-            <div class="signature-header">
-                <label class="termo-label"><i class="ti ti-writing"></i> Sua assinatura (dedo, caneta ou mouse)</label>
-                <button type="button" id="btn-clear-signature" class="btn btn-sm btn-outline-secondary">
-                    <i class="ti ti-eraser"></i> Limpar
-                </button>
+            <div class="termo-signature-tabs mb-2">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Modo de assinatura">
+                    <button type="button" class="btn btn-outline-primary active btn-sig-mode" data-mode="draw">
+                        <i class="ti ti-pencil"></i> Desenhar assinatura
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sig-mode" data-mode="type">
+                        <i class="ti ti-keyboard"></i> Digitar nome
+                    </button>
+                </div>
             </div>
-            <div class="canvas-wrapper">
-                <canvas id="signature-canvas"></canvas>
-                <div class="canvas-placeholder">Assine aqui</div>
+
+            <div class="sig-draw-container">
+                <div class="signature-header">
+                    <label class="termo-label"><i class="ti ti-writing"></i> Sua assinatura manual (dedo, caneta ou mouse)</label>
+                    <button type="button" id="btn-clear-signature" class="btn btn-sm btn-outline-secondary">
+                        <i class="ti ti-eraser"></i> Limpar
+                    </button>
+                </div>
+                <div class="canvas-wrapper">
+                    <canvas id="signature-canvas"></canvas>
+                    <div class="canvas-placeholder">Assine aqui</div>
+                </div>
+            </div>
+
+            <div class="sig-type-container" style="display: none;">
+                <div class="signature-header">
+                    <label class="termo-label" for="sig-type-input"><i class="ti ti-signature"></i> Confirme seu nome para a assinatura eletrônica</label>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-sm-8">
+                        <input type="text" id="sig-type-input" class="form-control" placeholder="Seu nome completo" value="<?= $e($user_name) ?>" autocomplete="name">
+                    </div>
+                    <div class="col-sm-4">
+                        <select id="sig-type-font" class="form-select">
+                            <option value="cursive1">Cursiva Elegante</option>
+                            <option value="cursive2">Caligráfica Moderna</option>
+                            <option value="formal">Formal / Serif</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sig-type-preview-card">
+                    <div id="sig-type-preview-text" class="sig-font-cursive1"><?= $e($user_name) ?></div>
+                    <div class="sig-type-metadata">
+                        <i class="ti ti-shield-check text-success"></i> 
+                        <span>Assinatura Eletrônica Autenticada • GLPI ID #<?= $me ?> • IP: <?= $e($client_ip) ?></span>
+                    </div>
+                </div>
             </div>
         </div>
 

@@ -103,6 +103,50 @@
         let lastCssWidth = 0;
         let lastCssHeight = 0;
 
+        // Modo de Assinatura: 'draw' (manual no canvas) ou 'type' (digitar nome)
+        let currentMode = 'draw';
+        const btnModes = form.querySelectorAll('.btn-sig-mode');
+        const drawContainer = form.querySelector('.sig-draw-container');
+        const typeContainer = form.querySelector('.sig-type-container');
+        const typeInput = form.querySelector('#sig-type-input');
+        const typeFontSelect = form.querySelector('#sig-type-font');
+        const typePreviewText = form.querySelector('#sig-type-preview-text');
+
+        function updateTypePreview() {
+            if (!typeInput || !typePreviewText) return;
+            const name = typeInput.value.trim() || form.dataset.userName || 'Assinatura do Colaborador';
+            typePreviewText.textContent = name;
+            const fontClass = typeFontSelect ? typeFontSelect.value : 'cursive1';
+            typePreviewText.className = 'sig-font-' + fontClass;
+        }
+
+        if (btnModes.length && drawContainer && typeContainer) {
+            btnModes.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    btnModes.forEach(function (b) { b.classList.remove('active'); });
+                    btn.classList.add('active');
+                    currentMode = btn.dataset.mode || 'draw';
+                    if (currentMode === 'type') {
+                        drawContainer.style.display = 'none';
+                        typeContainer.style.display = 'block';
+                        updateTypePreview();
+                        if (typeInput) typeInput.focus();
+                    } else {
+                        drawContainer.style.display = 'block';
+                        typeContainer.style.display = 'none';
+                        setup();
+                    }
+                });
+            });
+
+            if (typeInput) {
+                typeInput.addEventListener('input', updateTypePreview);
+            }
+            if (typeFontSelect) {
+                typeFontSelect.addEventListener('change', updateTypePreview);
+            }
+        }
+
         function redraw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if (!strokes.length) {
@@ -141,6 +185,10 @@
             currentStroke = null;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             wrapper.classList.remove('has-signature');
+            if (typeInput) {
+                typeInput.value = '';
+                updateTypePreview();
+            }
         }
 
         function setup() {
@@ -267,10 +315,80 @@
         setup();
 
         return {
-            hasDrawn: function () { return strokes.length > 0; },
+            hasDrawn: function () {
+                if (currentMode === 'type') {
+                    const name = (typeInput ? typeInput.value.trim() : '') || form.dataset.userName || '';
+                    return name.length >= 2;
+                }
+                return strokes.length > 0;
+            },
             clear: clear,
-            // Exporta recortado (Bounding Box Trim) com proporção ideal para o PDF
+            // Exporta a assinatura gerada em alta resolução para o PDF
             png: function () {
+                if (currentMode === 'type') {
+                    const name = (typeInput ? typeInput.value.trim() : '') || form.dataset.userName || '';
+                    if (!name) return '';
+
+                    const fontStyle = typeFontSelect ? typeFontSelect.value : 'cursive1';
+                    const dpr = 2;
+                    const cssW = 600;
+                    const cssH = 180;
+
+                    const out = document.createElement('canvas');
+                    out.width = cssW * dpr;
+                    out.height = cssH * dpr;
+                    const o = out.getContext('2d');
+                    o.scale(dpr, dpr);
+
+                    // Fundo branco opaco para documento impresso
+                    o.fillStyle = '#ffffff';
+                    o.fillRect(0, 0, cssW, cssH);
+
+                    // Nome caligráfico renderizado
+                    let fontFace = "italic 36px 'Brush Script MT', 'Segoe Script', 'Great Vibes', 'Dancing Script', cursive";
+                    if (fontStyle === 'cursive2') {
+                        fontFace = "italic 32px 'Lucida Handwriting', 'Segoe Print', 'Caveat', cursive";
+                    } else if (fontStyle === 'formal') {
+                        fontFace = "600 28px 'Times New Roman', 'Georgia', serif";
+                    }
+                    o.font = fontFace;
+                    o.fillStyle = '#0f172a';
+                    o.textAlign = 'center';
+                    o.textBaseline = 'middle';
+                    o.fillText(name, cssW / 2, 54);
+
+                    // Linha-guia divisória
+                    o.strokeStyle = '#cbd5e1';
+                    o.lineWidth = 1;
+                    o.beginPath();
+                    o.moveTo(35, 96);
+                    o.lineTo(cssW - 35, 96);
+                    o.stroke();
+
+                    // Chancela de Autenticação Eletrônica (Lei 14.063/2020)
+                    const userId = form.dataset.userId || '0';
+                    const clientIp = form.dataset.clientIp || '127.0.0.1';
+                    const now = new Date();
+                    const padZero = function (n) { return String(n).padStart(2, '0'); };
+                    const dateStr = padZero(now.getDate()) + '/' + padZero(now.getMonth() + 1) + '/' + now.getFullYear() + ' ' + padZero(now.getHours()) + ':' + padZero(now.getMinutes()) + ':' + padZero(now.getSeconds());
+
+                    o.font = "bold 9px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+                    o.fillStyle = '#1e293b';
+                    o.textAlign = 'left';
+                    o.fillText('ASSINADO ELETRONICAMENTE POR: ' + name.toUpperCase(), 38, 114);
+
+                    o.font = "9px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+                    o.fillStyle = '#64748b';
+                    o.fillText('AUTENTICAÇÃO: SESSÃO GLPI • ID: #' + userId + ' • IP: ' + clientIp + ' • DATA: ' + dateStr, 38, 130);
+                    o.fillText('CONFORMIDADE: LEI FEDERAL Nº 14.063/2020 (ASSINATURA ELETRÔNICA AVANÇADA)', 38, 144);
+
+                    o.fillStyle = '#16a34a';
+                    o.font = "bold 9.5px sans-serif";
+                    o.fillText('✓ DOCUMENTO ASSINADO E AUTENTICADO', 38, 160);
+
+                    return out.toDataURL('image/png');
+                }
+
                 if (!strokes.length) return '';
                 const dpr = Math.max(window.devicePixelRatio || 1, 2);
 
