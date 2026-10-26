@@ -1,37 +1,59 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root>
-    <name>Asset Terms</name>
-    <key>assetterms</key>
-    <state>stable</state>
-    <logo>https://raw.githubusercontent.com/GustavoMS0/GLPI-AssetTerms/main/assetterms.png</logo>
-    <description>
-        <short>
-            <en>Digital term generation and electronic signatures for corporate assets.</en>
-            <pt>Geração e gestão de termos de responsabilidade e devolução com assinatura eletrônica para ativos.</pt>
-        </short>
-        <long>
-            <en>GLPI Asset Terms allows creating delivery, return, and responsibility terms directly from asset cards. Supports drawn signature, typed legal signature, customizable legal templates, and audit trail metadata in compliance with Federal Law 14.063/2020.</en>
-            <pt>Permite a emissão ágil de termos de entrega, devolução e empréstimo com assinatura manuscrita ou digitada, trilha de auditoria e chancela eletrônica em conformidade com a Lei Federal nº 14.063/2020.</pt>
-        </long>
-    </description>
-    <homepage>https://github.com/GustavoMS0/GLPI-AssetTerms</homepage>
-    <download>https://github.com/GustavoMS0/GLPI-AssetTerms/releases</download>
-    <issues>https://github.com/GustavoMS0/GLPI-AssetTerms/issues</issues>
-    <readme>https://github.com/GustavoMS0/GLPI-AssetTerms/blob/main/README.md</readme>
-    <authors>
-        <author>Gustavo Martins</author>
-    </authors>
-    <versions>
-        <version>
-            <num>1.5.1</num>
-            <compatibility>>=10.0.0 &lt;10.1.0</compatibility>
-            <download_url>https://github.com/GustavoMS0/GLPI-AssetTerms/releases/download/v1.5.1/assetterms-1.5.1.zip</download_url>
-        </version>
-    </versions>
-    <langs>
-        <lang>pt_BR</lang>
-        <lang>en_GB</lang>
-    </langs>
-    <license>GPL-3.0-or-later</license>
+   <name>Asset Terms</name>
+   <key>assetterms</key>
+   <state>stable</state>
+   <logo>https://raw.githubusercontent.com/GustavoMS0/GLPI-AssetTerms/main/assetterms.png</logo>
+   <description>
+      <short>
+         <en>Digital term generation and electronic signatures for corporate assets.</en>
+         <pt>Geracao e gestao de termos de responsabilidade e devolucao com assinatura eletronica para ativos.</pt>
+      </short>
+      <long>
+         <en>GLPI Asset Terms allows creating delivery, return, and responsibility terms directly from asset cards. Supports drawn signature, typed legal signature, customizable legal templates, and audit trail metadata in compliance with Federal Law 14.063/2020.</en>
+         <pt>Permite a emissao agil de termos de entrega, devolucao e emprestimo com assinatura manuscrita ou digitada, trilha de auditoria e chancela eletronica em conformidade com a Lei Federal nº 14.063/2020.</pt>
+      </long>
+   </description>
+   <homepage>https://github.com/GustavoMS0/GLPI-AssetTerms</homepage>
+   <download>https://github.com/GustavoMS0/GLPI-AssetTerms/releases</download>
+   <issues>https://github.com/GustavoMS0/GLPI-AssetTerms/issues</issues>
+   <readme>https://github.com/GustavoMS0/GLPI-AssetTerms/blob/main/README.md</readme>
+   <changelog>https://github.com/GustavoMS0/GLPI-AssetTerms/blob/main/CHANGELOG.md</changelog>
+   <authors>
+      <author>Gustavo Martins</author>
+   </authors>
+   <versions>
+      <version>
+         <num>1.5.1</num>
+         <compatibility>>=10.0.0 &lt;10.1.0</compatibility>
+         <download_url>https://github.com/GustavoMS0/GLPI-AssetTerms/releases/download/v1.5.1/assetterms-1.5.1.zip</download_url>
+      </version>
+   </versions>
+   <langs>
+      <lang>pt_BR</lang>
+      <lang>en_GB</lang>
+   </langs>
+   <license>GPL v3+</license>
+   <tags>
+      <en>
+         <tag>assets</tag>
+         <tag>signature</tag>
+         <tag>terms</tag>
+         <tag>equipment</tag>
+         <tag>legal</tag>
+         <tag>pdf</tag>
+      </en>
+      <pt>
+         <tag>ativos</tag>
+         <tag>assinatura</tag>
+         <tag>termos</tag>
+         <tag>equipamentos</tag>
+         <tag>responsabilidade</tag>
+         <tag>pdf</tag>
+      </pt>
+   </tags>
+   <screenshots>
+      <screenshot>https://raw.githubusercontent.com/GustavoMS0/GLPI-AssetTerms/main/screenshots/01_config.png</screenshot>
+      <screenshot>https://raw.githubusercontent.com/GustavoMS0/GLPI-AssetTerms/main/screenshots/02_signature.png</screenshot>
+   </screenshots>
 </root>
-
