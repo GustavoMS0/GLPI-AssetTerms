@@ -49,8 +49,8 @@ try {
 
 $cid      = (int) ($_POST['computers_id'] ?? 0);
 $computer = new Computer();
-if ($cid <= 0 || !$computer->getFromDB($cid)) {
-    $json(['success' => false, 'message' => 'Equipamento não encontrado.'], 404);
+if ($cid <= 0 || !$computer->getFromDB($cid) || !empty($computer->fields['is_deleted']) || $computer->isTemplate()) {
+    $json(['success' => false, 'message' => 'Equipamento não encontrado ou indisponível.'], 404);
     return;
 }
 if (!$computer->can($cid, UPDATE)) {
@@ -92,13 +92,13 @@ if (($_POST['tipo_termo'] ?? '') === 'status') {
         $quem = ' e equipamento movido para ' . ($novo_nome !== '' ? $novo_nome . ($nome !== '' && $nome !== $novo_nome ? " ({$nome})" : '') : "{$nome} (sem usuário no GLPI)");
     }
 
-    if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
-        // O GLPI 10 espera a entrada escapada, como vem de um formulário
-        $update = Toolbox::addslashes_deep($update);
+    if (!$computer->update(PluginAssettermsTerm::coreInput($update))) {
+        $json(['success' => false, 'message' => 'O GLPI não aceitou a mudança do equipamento. Nada foi alterado.'], 500);
+        return;
     }
-    $computer->update($update);
-    $status = (string) Dropdown::getDropdownName('glpi_states', $state_id);
-    Log::history($cid, 'Computer', [0, '', "Ciclo de vida: status alterado para {$status}{$quem}, sem termo." . ($obs !== '' ? " Observação: {$obs}" : '')], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    $status = PluginAssettermsTerm::fromCore((string) Dropdown::getDropdownName('glpi_states', $state_id));
+    PluginAssettermsTerm::history($cid, "Ciclo de vida: status alterado para {$status}{$quem}, sem termo." . ($obs !== '' ? " Observação: {$obs}" : ''));
+    PluginAssettermsTerm::cancelPending($cid);
     $computer->getFromDB($cid);
     $json([
         'success'     => true,
@@ -175,8 +175,10 @@ if ($modo === 'email' || $modo === 'link') {
         return;
     }
     PluginAssettermsConfig::confirmNumber();
+    // O termo novo substitui os que ainda aguardavam assinatura neste computador
+    PluginAssettermsTerm::cancelPending($cid, (int) $req['id']);
     $como = $modo === 'email' ? "enviado por e-mail ({$dados['colaborador']['email']})" : 'com link de assinatura gerado';
-    Log::history($cid, 'Computer', [0, '', "{$titulo} {$como} para assinatura de {$dados['colaborador']['nome']}. Código: {$dados['codigo']}."], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    PluginAssettermsTerm::history($cid, "{$titulo} {$como} para assinatura de {$dados['colaborador']['nome']}. Código: {$dados['codigo']}.");
     if ($modo === 'link') {
         $json([
             'success' => true,
@@ -195,9 +197,10 @@ if ($modo === 'email' || $modo === 'link') {
 
 // ------------------------------------------------------- Assinatura na tela
 $dados = PluginAssettermsTerm::withDate($dados, $agora) + [
-    'assinatura' => $assinatura,
-    'modo'       => $assinatura !== '' ? 'tela' : 'manual',
-    'ip'         => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+    'assinatura'      => $assinatura,
+    'assinatura_tipo' => ($_POST['signature_kind'] ?? '') === 'digitada' ? 'digitada' : 'desenhada',
+    'modo'            => $assinatura !== '' ? 'tela' : 'manual',
+    'ip'              => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
 ];
 
 try {
@@ -233,5 +236,5 @@ $json([
     'doc_id'      => $doc_id,
     'view_url'    => $CFG_GLPI['root_doc'] . '/front/document.send.php?docid=' . $doc_id,
     'status_name' => $status,
-    'user_name'   => $dados['tipo'] === 'entrega' ? $dados['colaborador']['nome'] : 'Nenhum',
+    'user_name'   => $dados['tipo'] === 'entrega' ? $dados['colaborador']['nome'] : 'Nenhum colaborador vinculado',
 ]);

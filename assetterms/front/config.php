@@ -54,7 +54,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
 $own       = PluginAssettermsConfig::getOwn($eid);
 $effective = PluginAssettermsConfig::getEffective($eid);
-$entity    = (string) Dropdown::getDropdownName('glpi_entities', $eid);
+$entity    = PluginAssettermsTerm::fromCore((string) Dropdown::getDropdownName('glpi_entities', $eid));
 
 Html::header('Asset Terms', '', 'config', 'plugin');
 
@@ -80,7 +80,7 @@ if ($own !== null) {
     echo '<div class="alert alert-info mt-3 mb-0">Configuração própria de <strong>' . $e($entity) . '</strong>.</div>';
 } elseif ($effective['source'] !== null) {
     echo '<div class="alert alert-secondary mt-3 mb-0"><strong>' . $e($entity) . '</strong> usa a configuração de <strong>'
-        . $e(Dropdown::getDropdownName('glpi_entities', (int) $effective['source'])) . '</strong>. Ao salvar, ela passa a ter uma própria.</div>';
+        . $e(PluginAssettermsTerm::fromCore((string) Dropdown::getDropdownName('glpi_entities', (int) $effective['source']))) . '</strong>. Ao salvar, ela passa a ter uma própria.</div>';
 } else {
     echo '<div class="alert alert-secondary mt-3 mb-0"><strong>' . $e($entity) . '</strong> usa o texto padrão do plugin. Ao salvar, ela passa a ter uma configuração própria.</div>';
 }
@@ -159,7 +159,7 @@ $t = $effective['texts'];
         <br><strong>Exemplo com a configuração salva:</strong> <code id="termo-code-example"><?= $e(PluginAssettermsConfig::buildCode($effective, 'entrega', $now, false)) ?></code>
         <br>O código vai no PDF, no comentário do documento e no histórico do computador.
         <?php if ($effective['source'] !== null && $effective['source'] !== $eid): ?>
-            <br>A numeração é a de <strong><?= $e(Dropdown::getDropdownName('glpi_entities', (int) $effective['source'])) ?></strong>. Ao salvar uma configuração própria, esta entidade passa a ter numeração própria.
+            <br>A numeração é a de <strong><?= $e(PluginAssettermsTerm::fromCore((string) Dropdown::getDropdownName('glpi_entities', (int) $effective['source']))) ?></strong>. Ao salvar uma configuração própria, esta entidade passa a ter numeração própria.
         <?php endif; ?>
     </div>
 

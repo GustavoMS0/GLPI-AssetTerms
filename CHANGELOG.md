@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.5.2] - 2026-10-27
+
+### Segurança
+- GLPI 10: os valores gravados nas tabelas do plugin voltam a ser escapados. A 1.5.1 removeu o escape, e um apóstrofo nas observações ou nos dados do equipamento quebrava a consulta e permitia injeção de SQL no envio pelo link. O GLPI 11 não era afetado.
+- GLPI 10: o que vai para o núcleo (usuário alternativo, status, documento e histórico) passa pela sanitização do GLPI, como a entrada de um formulário.
+- Cancelar e assinar ao mesmo tempo não deixa mais o termo cancelado com documento arquivado, e uma falha ao arquivar não reabre um termo cancelado.
+
+### Corrigido
+- Assinatura com o nome digitado: usa só o nome digitado. Antes, com o campo vazio, a assinatura saía com o nome de quem já estava com o equipamento. A imagem leva só o nome (ajustando o tamanho para nomes longos), sem a chancela gerada no navegador, e o registro do PDF diz se a assinatura foi desenhada ou digitada.
+- Quadro de assinatura: mantém fundo branco no modo escuro do GLPI para o traço continuar visível.
+- Devolução à TI: limpa também o campo de usuário alternativo (`contact`) do computador, além do usuário vinculado.
+- O comentário do documento e o histórico dizem "link de assinatura" quando o termo foi enviado por link copiado, e não mais "e-mail".
+- Termos que aguardam assinatura são cancelados quando o mesmo computador recebe outro termo ou muda de ciclo de vida. Equipamento na lixeira ou modelo não aceita emissão nem assinatura.
+- Somente ciclo de vida: avisa quando o GLPI recusa a alteração, em vez de responder sucesso.
+- GLPI 10: nomes de usuário, status, entidade e computador com `& < >` não aparecem mais com entidades HTML no PDF e na aba.
+- O PDF temporário usa um nome único, para dois termos do mesmo computador no mesmo segundo não trocarem de arquivo.
+- `assetterms.xml`: compatibilidade com o GLPI 10 e 11, idiomas e descrição conferidos com o que o plugin faz, e capturas de tela novas.
+
 ## [1.5.1] - 2026-10-26
 
 ### Adicionado

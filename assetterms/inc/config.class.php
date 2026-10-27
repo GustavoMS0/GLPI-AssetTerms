@@ -62,7 +62,7 @@ class PluginAssettermsConfig extends CommonGLPI
      */
     public const DOC_CONTROL_FIELDS = [
         'tipo'            => ['Tipo', 'FORMULÁRIO', 40],
-        'codigo'          => ['Código do formulário', 'Ex.: FTIN 7.5.3.01', 40],
+        'codigo'          => ['Código do formulário', 'Ex.: FR-TI-001', 40],
         'titulo'          => ['Título no cabeçalho', 'Vazio = título do termo', 200],
         'revisao'         => ['Nº revisão', 'Ex.: 06', 20],
         'emissao'         => ['Data de emissão', 'dd/mm/aaaa', 20],
@@ -290,9 +290,9 @@ class PluginAssettermsConfig extends CommonGLPI
         return [
             'entities_id'  => $entities_id,
             'source'       => $source,
-            'company_name' => trim((string) ($own['company_name'] ?? '')) ?: (string) ($entity->fields['name'] ?? ''),
+            'company_name' => trim((string) ($own['company_name'] ?? '')) ?: PluginAssettermsTerm::fromCore((string) ($entity->fields['name'] ?? '')),
             'company_doc'  => trim((string) ($own['company_doc'] ?? '')),
-            'city'         => trim((string) ($own['city'] ?? '')) ?: trim((string) ($entity->fields['town'] ?? '')),
+            'city'         => trim((string) ($own['city'] ?? '')) ?: trim(PluginAssettermsTerm::fromCore((string) ($entity->fields['town'] ?? ''))),
             'texts'        => $texts,
             // Código do documento
             'code_format'  => trim((string) ($own['code_format'] ?? '')) ?: self::DEFAULT_CODE_FORMAT,

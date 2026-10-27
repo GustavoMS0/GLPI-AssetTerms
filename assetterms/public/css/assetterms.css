@@ -261,10 +261,11 @@
     position: relative;
     border: 2px dashed var(--tblr-border-color, #cbd5e1);
     border-radius: var(--tblr-border-radius, 8px);
-    background: var(--tblr-card-bg, #ffffff);
+    background: #ffffff;
     overflow: hidden;
     height: 180px;
     cursor: crosshair;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.03);
 }
 
 #signature-canvas {
@@ -279,7 +280,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    color: var(--tblr-secondary, #94a3b8);
+    color: #94a3b8;
     font-size: 0.875rem;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -527,13 +528,13 @@
 }
 
 .sig-font-cursive1 {
-    font-family: 'Brush Script MT', 'Segoe Script', 'Great Vibes', 'Dancing Script', cursive;
+    font-family: 'Brush Script MT', 'Snell Roundhand', 'Segoe Script', 'Great Vibes', 'Dancing Script', cursive;
     font-size: 2.3rem;
     font-style: italic;
 }
 
 .sig-font-cursive2 {
-    font-family: 'Lucida Handwriting', 'Segoe Print', 'Caveat', cursive;
+    font-family: 'Lucida Handwriting', 'Apple Chancery', 'Segoe Print', 'Caveat', cursive;
     font-size: 1.95rem;
     font-style: italic;
 }

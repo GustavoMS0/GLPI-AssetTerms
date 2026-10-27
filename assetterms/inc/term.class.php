@@ -47,6 +47,18 @@ class PluginAssettermsTerm extends CommonGLPI
 
     // --------------------------------------------------------------- Dados
 
+    /**
+     * Texto lido do núcleo. O GLPI 10 guarda < > & como entidades HTML; aqui o texto volta ao
+     * original, para o PDF e a tela escaparem uma vez só e coreInput() não codificar de novo.
+     */
+    public static function fromCore(string $value): string
+    {
+        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<') && class_exists(\Glpi\Toolbox\Sanitizer::class)) {
+            return (string) \Glpi\Toolbox\Sanitizer::unsanitize($value);
+        }
+        return $value;
+    }
+
     /** Nome de exibição do usuário (Nome Sobrenome), ou o login */
     public static function userName(int $users_id): string
     {
@@ -55,7 +67,7 @@ class PluginAssettermsTerm extends CommonGLPI
             return '';
         }
         $name = trim(($user->fields['firstname'] ?? '') . ' ' . ($user->fields['realname'] ?? ''));
-        return $name !== '' ? $name : (string) $user->fields['name'];
+        return self::fromCore($name !== '' ? $name : (string) $user->fields['name']);
     }
 
     /**
@@ -68,7 +80,7 @@ class PluginAssettermsTerm extends CommonGLPI
         if ($user !== '') {
             return $user;
         }
-        $contact = trim((string) ($computer->fields['contact'] ?? ''));
+        $contact = trim(self::fromCore((string) ($computer->fields['contact'] ?? '')));
         return $contact !== '' ? $contact . ' (sem usuário no GLPI)' : 'Nenhum colaborador vinculado';
     }
 
@@ -144,7 +156,7 @@ class PluginAssettermsTerm extends CommonGLPI
         }
 
         $dropdown = static fn (string $table, string $field): string
-            => (int) ($computer->fields[$field] ?? 0) > 0 ? (string) Dropdown::getDropdownName($table, (int) $computer->fields[$field]) : '';
+            => (int) ($computer->fields[$field] ?? 0) > 0 ? self::fromCore((string) Dropdown::getDropdownName($table, (int) $computer->fields[$field])) : '';
 
 
         return [
@@ -178,7 +190,7 @@ class PluginAssettermsTerm extends CommonGLPI
         }
         $states = [];
         foreach ($DB->request($criteria) as $row) {
-            $states[(int) $row['id']] = (string) $row['completename'];
+            $states[(int) $row['id']] = self::fromCore((string) $row['completename']);
         }
         return $states;
     }
@@ -263,11 +275,63 @@ class PluginAssettermsTerm extends CommonGLPI
     }
 
     /**
-     * Valores para $DB->insert/update.
+     * Valores para $DB->insert/update nas tabelas do plugin. O query builder do GLPI 10 não escapa
+     * os valores (conta com a entrada já sanitizada, que normalizeInput() desfaz); o do GLPI 11 escapa.
      */
     public static function dbValues(array $values): array
     {
+        global $DB;
+        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
+            foreach ($values as $k => $v) {
+                if (is_string($v)) {
+                    $values[$k] = $DB->escape($v);
+                }
+            }
+        }
         return $values;
+    }
+
+    /**
+     * Entrada para o núcleo (CommonDBTM::add/update, Log::history). O GLPI 10 espera os valores
+     * sanitizados como vêm de um formulário: escapados para SQL e com < > & em entidades HTML.
+     *
+     * @param mixed $values
+     * @return mixed
+     */
+    public static function coreInput($values)
+    {
+        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
+            return class_exists(\Glpi\Toolbox\Sanitizer::class)
+                ? \Glpi\Toolbox\Sanitizer::sanitize($values)
+                : Toolbox::addslashes_deep($values);
+        }
+        return $values;
+    }
+
+    /** Mensagem simples no histórico do computador */
+    public static function history(int $computers_id, string $msg): void
+    {
+        Log::history($computers_id, 'Computer', [0, '', self::coreInput($msg)], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    }
+
+    /**
+     * Cancela os termos do computador que ainda aguardam assinatura: depois de outro termo ou de
+     * uma mudança de ciclo de vida, uma assinatura atrasada devolveria o equipamento à situação antiga.
+     */
+    public static function cancelPending(int $computers_id, int $except_id = 0): void
+    {
+        global $DB;
+        $where = ['computers_id' => $computers_id, 'status' => self::PENDING];
+        if ($except_id > 0) {
+            $where['NOT'] = ['id' => $except_id];
+        }
+        $DB->update(self::TABLE, ['status' => self::CANCELED, 'date_mod' => date('Y-m-d H:i:s')], $where);
+        $n = (int) $DB->affectedRows();
+        if ($n > 0) {
+            self::history($computers_id, $n === 1
+                ? 'Termo que aguardava assinatura cancelado: a situação do equipamento mudou. O link enviado deixou de funcionar.'
+                : "{$n} termos que aguardavam assinatura cancelados: a situação do equipamento mudou. Os links enviados deixaram de funcionar.");
+        }
     }
 
     /**
@@ -443,7 +507,7 @@ class PluginAssettermsTerm extends CommonGLPI
             'tecnico_id'   => $tech_id,
             'colaborador'  => self::userData($in['users_id']) + ['id' => $in['users_id']],
             'equipamento'  => array_merge(self::getComputerSpecs($computer), $in['equipamento'] ?? []) + [
-                'nome'       => (string) ($computer->fields['name'] ?? ''),
+                'nome'       => self::fromCore((string) ($computer->fields['name'] ?? '')),
                 'serial'     => (string) ($computer->fields['serial'] ?? ''),
                 'patrimonio' => (string) ($computer->fields['otherserial'] ?? ''),
             ],
@@ -516,24 +580,31 @@ class PluginAssettermsTerm extends CommonGLPI
         $arquivo = self::fileName($d, $time);
         $nome    = $d['colaborador']['nome'];
 
-        // O GLPI move o arquivo do diretório temporário, confere o tipo e calcula o checksum
-        $tmp = GLPI_TMP_DIR . '/' . $arquivo;
+        // O GLPI move o arquivo do diretório temporário, confere o tipo e calcula o checksum.
+        // O prefixo único evita que dois termos do mesmo computador no mesmo segundo usem o mesmo arquivo;
+        // o GLPI o tira do nome (_prefix_filename), como faz com os uploads.
+        $prefixo = uniqid('', true);
+        $tmp     = GLPI_TMP_DIR . '/' . $prefixo . $arquivo;
         if (file_put_contents($tmp, $pdf) === false) {
             throw new RuntimeException('Não foi possível gravar o arquivo em ' . GLPI_TMP_DIR . '.');
         }
-        $modo = ['email' => 'Assinado pelo link enviado por e-mail', 'tela' => 'Assinado na tela'][$d['modo']] ?? 'Para assinatura manual';
-        $input = [
-            'name'         => $titulo . ' - ' . ($d['equipamento']['nome'] ?: 'equipamento') . ' - ' . $nome . ' - ' . date('d/m/Y', $time),
-            'entities_id'  => (int) $computer->fields['entities_id'],
-            'is_recursive' => 0,
-            'comment'      => sprintf('%s de %s. Código %s. %s.', $titulo, $nome, $d['codigo'], $modo),
-            'users_id'     => (int) $d['tecnico_id'],
-            '_filename'    => [$arquivo],
-        ];
-        if (version_compare(GLPI_VERSION, '11.0.0-dev', '<')) {
-            // O GLPI 10 espera a entrada escapada, como vem de um formulário
-            $input = Toolbox::addslashes_deep($input);
+        $modo = [
+            'email' => 'Assinado pelo link enviado por e-mail',
+            'link'  => 'Assinado pelo link de assinatura',
+            'tela'  => 'Assinado na tela',
+        ][$d['modo']] ?? 'Para assinatura manual';
+        if ($d['assinatura'] !== '' && ($d['assinatura_tipo'] ?? '') === 'digitada') {
+            $modo .= ' (nome digitado)';
         }
+        $input = self::coreInput([
+            'name'              => $titulo . ' - ' . ($d['equipamento']['nome'] ?: 'equipamento') . ' - ' . $nome . ' - ' . date('d/m/Y', $time),
+            'entities_id'       => (int) $computer->fields['entities_id'],
+            'is_recursive'      => 0,
+            'comment'           => sprintf('%s de %s. Código %s. %s.', $titulo, $nome, $d['codigo'], $modo),
+            'users_id'          => (int) $d['tecnico_id'],
+            '_filename'         => [$prefixo . $arquivo],
+            '_prefix_filename'  => [$prefixo],
+        ]);
         $document = new Document();
         $doc_id   = (int) $document->add($input);
         if (is_file($tmp)) {
@@ -558,6 +629,9 @@ class PluginAssettermsTerm extends CommonGLPI
             self::registerDocument($doc_id, (int) $computer->getID(), $d);
 
             $update = ['id' => (int) $computer->getID(), 'users_id' => $d['tipo'] === 'entrega' ? (int) $d['colaborador']['id'] : 0];
+            if ($d['tipo'] === 'devolucao') {
+                $update['contact'] = '';
+            }
             if ((int) $d['state_id'] > 0) {
                 $update['states_id'] = (int) $d['state_id'];
             }
@@ -570,9 +644,16 @@ class PluginAssettermsTerm extends CommonGLPI
             throw $e instanceof RuntimeException ? $e : new RuntimeException('Não foi possível arquivar o termo.', 0, $e);
         }
 
-        $status = (int) $d['state_id'] > 0 ? (string) Dropdown::getDropdownName('glpi_states', (int) $d['state_id']) : '';
+        $status = (int) $d['state_id'] > 0 ? self::fromCore((string) Dropdown::getDropdownName('glpi_states', (int) $d['state_id'])) : '';
         $msg    = "{$titulo} #{$doc_id} arquivado ({$modo}). Colaborador: {$nome}. Código: {$d['codigo']}." . ($status !== '' ? " Status: {$status}." : '');
-        Log::history((int) $computer->getID(), 'Computer', [0, '', $msg], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+        // O termo já está arquivado: uma falha daqui em diante não pode levar quem chamou a tentar de novo
+        try {
+            self::history((int) $computer->getID(), $msg);
+            // O pedido assinado pelo link já está SIGNED; sobram só os pendentes antigos
+            self::cancelPending((int) $computer->getID());
+        } catch (Throwable $e) {
+            Toolbox::logInFile('php-errors', 'Asset Terms: termo #' . $doc_id . ' arquivado, mas falhou o histórico ou o cancelamento dos pendentes: ' . $e->getMessage() . "\n");
+        }
 
         return [$doc_id, $status, $pdf];
     }
@@ -1152,11 +1233,14 @@ class PluginAssettermsTerm extends CommonGLPI
         $pdf->Ln(6);
         $pdf->SetFont('dejavusans', '', 7);
         $pdf->SetTextColor(110, 110, 110);
-        if ($d['assinatura'] !== '' && ($d['modo'] ?? '') === 'email') {
+        // Assinatura com o nome digitado fica identificada como tal, sem se passar por manuscrita
+        $forma = ($d['assinatura_tipo'] ?? '') === 'digitada' ? 'com o nome digitado' : 'desenhada';
+        if ($d['assinatura'] !== '' && in_array($d['modo'] ?? '', ['email', 'link'], true)) {
             $registro = sprintf(
-                'Assinatura eletrônica feita pelo(a) próprio(a) colaborador(a) em %s, autenticado(a) no GLPI com o usuário "%s", '
+                'Assinatura eletrônica simples (%s) feita pelo(a) próprio(a) colaborador(a) em %s, autenticado(a) no GLPI com o usuário "%s", '
                 . 'a partir do endereço IP %s, depois de declarar que leu e concorda com este termo. '
                 . 'Termo enviado para assinatura por %s em %s. Documento gerado e arquivado no GLPI. Código do documento: %s.',
+                $forma,
                 $d['data'],
                 $d['login'],
                 $d['ip'],
@@ -1166,8 +1250,9 @@ class PluginAssettermsTerm extends CommonGLPI
             );
         } elseif ($d['assinatura'] !== '') {
             $registro = sprintf(
-                'Assinatura eletrônica do(a) colaborador(a) feita na tela em %s, na presença de %s, a partir do endereço IP %s. '
+                'Assinatura eletrônica simples (%s) do(a) colaborador(a) feita na tela em %s, na presença de %s, a partir do endereço IP %s. '
                 . 'Documento gerado e arquivado no GLPI. Código do documento: %s.',
+                $forma,
                 $d['data'],
                 $d['tecnico'],
                 $d['ip'],
@@ -1197,7 +1282,7 @@ class PluginAssettermsTerm extends CommonGLPI
                 'SELECT'     => [self::TABLE . '.*', 'glpi_computers.name AS computer_name'],
                 'FROM'       => self::TABLE,
                 'INNER JOIN' => ['glpi_computers' => ['ON' => [self::TABLE => 'computers_id', 'glpi_computers' => 'id']]],
-                'WHERE'      => ['status' => self::PENDING] + getEntitiesRestrictCriteria(self::TABLE),
+                'WHERE'      => [self::TABLE . '.status' => self::PENDING, 'glpi_computers.is_deleted' => 0] + getEntitiesRestrictCriteria(self::TABLE),
                 'ORDER'      => 'date_send DESC',
                 'LIMIT'      => 200,
             ]) as $row
@@ -1239,7 +1324,7 @@ class PluginAssettermsTerm extends CommonGLPI
                                 <td><strong><?= $e(Html::convDateTime($p['date_send'])) ?></strong><br>
                                     <small class="text-muted"><?= ($p['data']['canal'] ?? 'email') === 'link' ? 'Link copiado' : 'Por e-mail' ?></small></td>
                                 <?php if ($with_computer): ?>
-                                    <td><a href="<?= $e($CFG_GLPI['root_doc'] . '/front/computer.form.php?id=' . (int) $p['computers_id']) ?>"><?= $e($p['computer_name'] ?? '') ?></a></td>
+                                    <td><a href="<?= $e($CFG_GLPI['root_doc'] . '/front/computer.form.php?id=' . (int) $p['computers_id']) ?>"><?= $e(self::fromCore((string) ($p['computer_name'] ?? ''))) ?></a></td>
                                 <?php endif; ?>
                                 <td><?= $p['type'] === 'devolucao' ? 'Devolução' : 'Entrega' ?> <span class="text-muted">(<?= $e($p['code']) ?>)</span></td>
                                 <td><?= $e($p['data']['colaborador']['nome'] ?? '') ?><br><small class="text-muted"><?= $e($email) ?></small></td>
@@ -1281,7 +1366,7 @@ class PluginAssettermsTerm extends CommonGLPI
         $user_id   = (int) ($computer->fields['users_id'] ?? 0);
         $user_name = self::holderName($computer);
         $status    = (int) ($computer->fields['states_id'] ?? 0) > 0
-            ? (string) Dropdown::getDropdownName('glpi_states', (int) $computer->fields['states_id'])
+            ? self::fromCore((string) Dropdown::getDropdownName('glpi_states', (int) $computer->fields['states_id']))
             : 'Não definido';
         $or = static fn ($v): string => trim((string) $v) !== '' ? (string) $v : 'Não informado';
         $e  = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
@@ -1337,7 +1422,7 @@ class PluginAssettermsTerm extends CommonGLPI
                 </div>
 
                 <div class="termo-specs-grid">
-                    <div class="spec-item"><span class="spec-label">Equipamento:</span><span class="spec-val"><?= $e($or($computer->fields['name'] ?? '')) ?></span></div>
+                    <div class="spec-item"><span class="spec-label">Equipamento:</span><span class="spec-val"><?= $e($or(self::fromCore((string) ($computer->fields['name'] ?? '')))) ?></span></div>
                     <div class="spec-item"><span class="spec-label">Fabricante / modelo:</span><span class="spec-val"><?= $e($or(trim($specs['fabricante'] . ' ' . $specs['modelo']))) ?></span></div>
                     <div class="spec-item"><span class="spec-label">Número de série:</span><span class="spec-val highlight"><?= $e($or($computer->fields['serial'] ?? '')) ?></span></div>
                     <div class="spec-item"><span class="spec-label">Patrimônio:</span><span class="spec-val highlight"><?= $e($or($computer->fields['otherserial'] ?? '')) ?></span></div>
@@ -1346,9 +1431,6 @@ class PluginAssettermsTerm extends CommonGLPI
 
             <?php if ($can_edit): ?>
             <form id="form-termo-responsabilidade" class="termo-card" method="post" action="<?= $e($base . '/ajax/save.php') ?>"
-                  data-user-name="<?= $e($user_name) ?>"
-                  data-user-id="<?= $user_id ?>"
-                  data-client-ip="<?= $e($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1') ?>"
                   onsubmit="return false;">
                 <input type="hidden" name="computers_id" value="<?= $cid ?>">
                 <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
@@ -1523,7 +1605,7 @@ class PluginAssettermsTerm extends CommonGLPI
                         </div>
                         <div class="row g-2 mb-2">
                             <div class="col-sm-8">
-                                <input type="text" id="sig-type-input" class="form-control" placeholder="Nome completo do colaborador" value="<?= $e($user_name) ?>" autocomplete="name">
+                                <input type="text" id="sig-type-input" class="form-control" maxlength="120" placeholder="Nome completo do colaborador" value="" autocomplete="off">
                             </div>
                             <div class="col-sm-4">
                                 <select id="sig-type-font" class="form-select">
@@ -1534,10 +1616,10 @@ class PluginAssettermsTerm extends CommonGLPI
                             </div>
                         </div>
                         <div class="sig-type-preview-card">
-                            <div id="sig-type-preview-text" class="sig-font-cursive1"><?= $e($user_name) ?></div>
+                            <div id="sig-type-preview-text" class="sig-font-cursive1"></div>
                             <div class="sig-type-metadata">
-                                <i class="ti ti-shield-check text-success"></i> 
-                                <span>Assinatura Eletrônica Autenticada • GLPI ID #<?= (int)$user_id ?> • IP: <?= $e($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1') ?></span>
+                                <i class="ti ti-info-circle"></i>
+                                <span>O colaborador digita o próprio nome. O PDF registra que a assinatura foi feita com o nome digitado.</span>
                             </div>
                         </div>
                     </div>
@@ -1602,8 +1684,8 @@ class PluginAssettermsTerm extends CommonGLPI
                                 <?php foreach ($termos as $t): ?>
                                     <tr>
                                         <td><strong><?= $e(Html::convDateTime($t['date_creation'])) ?></strong></td>
-                                        <td><i class="ti ti-file-text text-primary"></i> <?= $e($t['name']) ?></td>
-                                        <td><?= $e($t['comment']) ?></td>
+                                        <td><i class="ti ti-file-text text-primary"></i> <?= $e(self::fromCore((string) $t['name'])) ?></td>
+                                        <td><?= $e(self::fromCore((string) $t['comment'])) ?></td>
                                         <td><?= $e(self::userName((int) $t['users_id']) ?: '-') ?></td>
                                         <td>
                                             <a href="<?= $e($CFG_GLPI['root_doc'] . '/front/document.send.php?docid=' . (int) $t['id']) ?>"

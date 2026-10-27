@@ -55,8 +55,17 @@ $nome   = $req['data']['colaborador']['nome'] ?? '';
 $titulo = $req['type'] === 'devolucao' ? 'Termo de Devolução' : 'Termo de Entrega';
 
 if (($_POST['acao'] ?? '') === 'cancelar') {
-    $DB->update(PluginAssettermsTerm::TABLE, ['status' => PluginAssettermsTerm::CANCELED, 'date_mod' => date('Y-m-d H:i:s')], ['id' => (int) $req['id']]);
-    Log::history((int) $req['computers_id'], 'Computer', [0, '', "{$titulo} enviado para {$nome} cancelado. Código: {$req['code']}."], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+    // Só cancela se ainda estiver pendente: o colaborador pode ter assinado neste meio-tempo
+    $DB->update(
+        PluginAssettermsTerm::TABLE,
+        ['status' => PluginAssettermsTerm::CANCELED, 'date_mod' => date('Y-m-d H:i:s')],
+        ['id' => (int) $req['id'], 'status' => PluginAssettermsTerm::PENDING]
+    );
+    if ($DB->affectedRows() !== 1) {
+        $json(['success' => false, 'message' => 'Este termo não está mais aguardando assinatura.', 'reload' => true], 409);
+        return;
+    }
+    PluginAssettermsTerm::history((int) $req['computers_id'], "{$titulo} enviado para {$nome} cancelado. Código: {$req['code']}.");
     $json(['success' => true, 'reload' => true, 'message' => 'Termo cancelado. O link enviado deixou de funcionar.']);
     return;
 }

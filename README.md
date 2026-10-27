@@ -52,6 +52,7 @@ PHP 7.4 ou mais novo (o mínimo do GLPI 10.0; o GLPI 11 já exige PHP 8.2).
   2. **pelo e-mail:** o colaborador recebe um link, entra no GLPI com o próprio usuário, marca "li e concordo" e assina;
   3. **pelo link copiado:** a mesma coisa, mas o técnico manda o link pelo Teams, WhatsApp ou chat. Funciona **sem o e-mail do GLPI configurado**;
   4. **no papel:** PDF para imprimir, sem gravar nada.
+- Na tela e pelo link, o colaborador pode **desenhar** a assinatura ou **digitar o próprio nome**. O PDF registra qual das duas foi usada.
 - **PDF de uma página**, arquivado na aba **Documentos** do computador e aberto direto no navegador. Ele registra a data, a hora, o IP, o usuário do GLPI (na assinatura pelo link) e um **código do documento**.
 - **O equipamento é atualizado sozinho:**
   - na entrega, o colaborador vira o usuário e o status passa a **Em uso**;
@@ -214,6 +215,8 @@ Enquanto não é assinado, o termo aparece em **Aguardando assinatura**, na aba 
 - **Copiar link:** para mandar de novo por qualquer meio;
 - **Reenviar:** por e-mail, para o e-mail atual do colaborador;
 - **Cancelar:** o link deixa de funcionar.
+
+O termo pendente também é cancelado sozinho quando a situação do equipamento muda antes da assinatura: outro termo arquivado ou enviado para o mesmo computador, ou uma mudança em **Somente ciclo de vida**. Assim, uma assinatura atrasada não devolve o equipamento a quem não está mais com ele.
 
 | Situação | O que acontece ao abrir o link |
 |---|---|
@@ -453,7 +456,7 @@ Validado no GLPI 11.0.10 e no GLPI 10.0.28, com o navegador:
 | Sem prefixo | sem separador sobrando (ex.: `ENT202610-000130`) ✅ |
 | Logo, cor e rodapé | no PDF; logo que não é imagem é recusado; remover logo funciona ✅ |
 | PDF de exemplo | mostra código, logo, cor e rodapé sem consumir número ✅ |
-| Cabeçalho de controle de documentos (modelo FTIN 7.5.3.01) | tabela com logo, tipo, código, título, revisão, datas e "Página X de Y" em todas as páginas; rodapé com elaborado e aprovado ✅ |
+| Cabeçalho de controle de documentos (tipo, código do formulário, revisão e datas) | tabela com logo, tipo, código, título, revisão, datas e "Página X de Y" em todas as páginas; rodapé com elaborado e aprovado ✅ |
 | PDF assinado pelo link | chega por e-mail ao colaborador com o mesmo cabeçalho e rodapé ✅ |
 | Apóstrofo e `< > &` em textos e nomes (GLPI 10 e 11) | gravados e impressos como digitados ✅ |
 

@@ -50,13 +50,15 @@ if ($req === null || (int) $req['users_id'] !== $me) {
 } elseif ((int) $req['status'] === PluginAssettermsTerm::CANCELED) {
     echo '<div class="termo-card"><h3 class="termo-title"><i class="ti ti-circle-x text-danger"></i> Termo cancelado</h3>'
         . '<p>A TI cancelou este termo. Se tiver dúvidas, fale com a equipe de TI.</p></div>';
+} elseif (!($comp = new Computer()) || !$comp->getFromDB((int) $req['computers_id']) || !empty($comp->fields['is_deleted'])) {
+    echo '<div class="termo-card"><h3 class="termo-title"><i class="ti ti-alert-triangle text-warning"></i> Equipamento indisponível</h3>'
+        . '<p>O equipamento deste termo não está mais disponível no inventário. Fale com a equipe de TI.</p></div>';
 } else {
     $d         = $req['data'];
     $eq        = $d['equipamento'];
     $texto     = PluginAssettermsTerm::textoFor($d);
     $acao      = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
     $user_name = PluginAssettermsTerm::userName($me);
-    $client_ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
     ?>
     <div class="termo-card termo-header-card">
         <h3 class="termo-title"><i class="ti ti-file-certificate"></i> <?= $e($texto['titulo']) ?></h3>
@@ -82,9 +84,6 @@ if ($req === null || (int) $req['users_id'] !== $me) {
 
     <form id="form-termo-assinatura" class="termo-card" method="post"
           action="<?= $e(PluginAssettermsTerm::webPath() . '/ajax/sign.php') ?>"
-          data-user-name="<?= $e($user_name) ?>"
-          data-user-id="<?= $me ?>"
-          data-client-ip="<?= $e($client_ip) ?>"
           onsubmit="return false;">
         <input type="hidden" name="id" value="<?= (int) $req['id'] ?>">
         <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
@@ -134,7 +133,7 @@ if ($req === null || (int) $req['users_id'] !== $me) {
                 </div>
                 <div class="row g-2 mb-2">
                     <div class="col-sm-8">
-                        <input type="text" id="sig-type-input" class="form-control" placeholder="Seu nome completo" value="<?= $e($user_name) ?>" autocomplete="name">
+                        <input type="text" id="sig-type-input" class="form-control" maxlength="120" placeholder="Seu nome completo" value="<?= $e($user_name) ?>" autocomplete="name">
                     </div>
                     <div class="col-sm-4">
                         <select id="sig-type-font" class="form-select">
@@ -147,8 +146,8 @@ if ($req === null || (int) $req['users_id'] !== $me) {
                 <div class="sig-type-preview-card">
                     <div id="sig-type-preview-text" class="sig-font-cursive1"><?= $e($user_name) ?></div>
                     <div class="sig-type-metadata">
-                        <i class="ti ti-shield-check text-success"></i> 
-                        <span>Assinatura Eletrônica Autenticada • GLPI ID #<?= $me ?> • IP: <?= $e($client_ip) ?></span>
+                        <i class="ti ti-info-circle"></i>
+                        <span>O PDF registra que você assinou com o nome digitado, entrando no GLPI com o seu usuário.</span>
                     </div>
                 </div>
             </div>

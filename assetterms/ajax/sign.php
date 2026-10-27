@@ -57,19 +57,19 @@ if ($assinatura === null || $assinatura === '') {
 }
 
 $computer = new Computer();
-if (!$computer->getFromDB((int) $req['computers_id'])) {
+if (!$computer->getFromDB((int) $req['computers_id']) || !empty($computer->fields['is_deleted'])) {
     $json(['success' => false, 'message' => 'O equipamento deste termo não existe mais. Fale com a TI.'], 410);
     return;
 }
 
 // Reserva o pedido: um segundo envio (duplo clique, outra aba) não gera outro termo
 $agora = time();
-$DB->update(PluginAssettermsTerm::TABLE, [
+$DB->update(PluginAssettermsTerm::TABLE, PluginAssettermsTerm::dbValues([
     'status'      => PluginAssettermsTerm::SIGNED,
     'date_signed' => date('Y-m-d H:i:s', $agora),
-    'sign_ip'     => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+    'sign_ip'     => substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
     'date_mod'    => date('Y-m-d H:i:s', $agora),
-], ['id' => (int) $req['id'], 'status' => PluginAssettermsTerm::PENDING]);
+]), ['id' => (int) $req['id'], 'status' => PluginAssettermsTerm::PENDING]);
 if ($DB->affectedRows() !== 1) {
     $json(['success' => false, 'message' => 'Este termo já foi assinado.'], 409);
     return;
@@ -78,11 +78,12 @@ if ($DB->affectedRows() !== 1) {
 $user  = new User();
 $user->getFromDB($me);
 $dados = PluginAssettermsTerm::withDate($req['data'], $agora) + [
-    'assinatura' => $assinatura,
-    'modo'       => 'email',
-    'ip'         => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
-    'login'      => (string) ($user->fields['name'] ?? ''),
-    'enviado_em' => date('d/m/Y H:i', strtotime((string) $req['date_send'])),
+    'assinatura'      => $assinatura,
+    'assinatura_tipo' => ($_POST['signature_kind'] ?? '') === 'digitada' ? 'digitada' : 'desenhada',
+    'modo'            => ($req['data']['canal'] ?? '') === 'link' ? 'link' : 'email',
+    'ip'              => (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+    'login'           => (string) ($user->fields['name'] ?? ''),
+    'enviado_em'      => date('d/m/Y H:i', strtotime((string) $req['date_send'])),
 ];
 
 try {
@@ -90,7 +91,11 @@ try {
 } catch (Throwable $e) {
     // Libera o pedido para uma nova tentativa. Se o documento chegou a ser criado, archive() já o
     // apagou (com o arquivo e o vínculo), então a nova tentativa não deixa termo duplicado.
-    $DB->update(PluginAssettermsTerm::TABLE, ['status' => PluginAssettermsTerm::PENDING, 'date_signed' => null, 'sign_ip' => ''], ['id' => (int) $req['id']]);
+    $DB->update(
+        PluginAssettermsTerm::TABLE,
+        ['status' => PluginAssettermsTerm::PENDING, 'date_signed' => null, 'sign_ip' => ''],
+        ['id' => (int) $req['id'], 'status' => PluginAssettermsTerm::SIGNED]
+    );
     $causa = $e->getPrevious() !== null ? ' (' . $e->getPrevious()->getMessage() . ')' : '';
     Toolbox::logInFile('php-errors', 'Asset Terms: falha ao arquivar o termo #' . (int) $req['id'] . ': ' . $e->getMessage() . $causa . "\n");
     $json(['success' => false, 'message' => 'Não foi possível concluir a assinatura agora. Tente de novo em alguns minutos ou fale com a TI.'], 500);
