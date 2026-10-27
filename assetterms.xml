@@ -6,19 +6,18 @@
    <logo>https://raw.githubusercontent.com/GustavoMS0/GLPI-AssetTerms/main/assetterms.png</logo>
    <description>
       <short>
-         <en>Digital term generation and electronic signatures for corporate assets.</en>
-         <pt>Geracao e gestao de termos de responsabilidade e devolucao com assinatura eletronica para ativos.</pt>
+         <en>Equipment delivery and return terms in PDF, signed on screen or through a link.</en>
+         <pt>Termos de entrega e devolução de equipamentos em PDF, assinados na tela ou por link.</pt>
       </short>
       <long>
-         <en>Creates equipment delivery and return terms from the computer card. The employee signs on screen (drawn or typed name) or later through a link, logged in with their own GLPI account. The PDF is archived in the computer Documents tab, and user and status are updated automatically. Simple electronic signature.</en>
-         <pt>Gera termos de entrega e de devolucao de equipamentos a partir da ficha do computador. O colaborador assina na tela (desenhando ou digitando o nome) ou depois pelo link, entrando com o proprio usuario do GLPI. O PDF fica na aba Documentos do computador e o usuario e o status sao atualizados sozinhos. Assinatura eletronica simples.</pt>
+         <en>Creates equipment delivery and return terms from the computer card. The employee signs on screen (drawn or typed name) or later through a link, logged in with their own GLPI account. The PDF is archived in the computer Documents tab, and the user and status of the computer are updated automatically. Includes an accessories checklist, a sequential document code per entity, a configurable company text, logo and colour, and an optional document control (ISO) header. Simple electronic signature. Interface in Brazilian Portuguese.</en>
+         <pt>Gera termos de entrega e de devolução de equipamentos a partir da ficha do computador. O colaborador assina na tela (desenhando ou digitando o nome) ou depois pelo link, entrando com o próprio usuário do GLPI. O PDF fica na aba Documentos do computador, e o usuário e o status do equipamento são atualizados sozinhos. Inclui checklist de acessórios, código do documento sequencial por entidade, texto, logo e cor da empresa configuráveis e cabeçalho opcional de controle de documentos (ISO). Assinatura eletrônica simples.</pt>
       </long>
    </description>
    <homepage>https://github.com/GustavoMS0/GLPI-AssetTerms</homepage>
    <download>https://github.com/GustavoMS0/GLPI-AssetTerms/releases</download>
    <issues>https://github.com/GustavoMS0/GLPI-AssetTerms/issues</issues>
    <readme>https://github.com/GustavoMS0/GLPI-AssetTerms/blob/main/README.md</readme>
-   <changelog>https://github.com/GustavoMS0/GLPI-AssetTerms/blob/main/CHANGELOG.md</changelog>
    <authors>
       <author>Gustavo Martins</author>
    </authors>
@@ -41,19 +40,19 @@
    <tags>
       <en>
          <tag>assets</tag>
+         <tag>computer</tag>
          <tag>signature</tag>
          <tag>terms</tag>
-         <tag>equipment</tag>
-         <tag>legal</tag>
          <tag>pdf</tag>
+         <tag>inventory</tag>
       </en>
       <pt>
          <tag>ativos</tag>
+         <tag>computador</tag>
          <tag>assinatura</tag>
          <tag>termos</tag>
-         <tag>equipamentos</tag>
-         <tag>responsabilidade</tag>
          <tag>pdf</tag>
+         <tag>inventário</tag>
       </pt>
    </tags>
    <screenshots>
