@@ -30,7 +30,11 @@ if (!Session::haveAccessToEntity($eid)) {
 
 // ----------------------------------------------------------------- Gravação
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-    Session::checkCSRF($_POST);
+    // No GLPI 10, inc/includes.php já validou e consumiu o token deste POST.
+    // Revalidá-lo aqui rejeita um formulário legítimo antes de salvar/restaurar.
+    if (version_compare(GLPI_VERSION, '11.0.0-dev', '>=')) {
+        Session::checkCSRF($_POST);
+    }
 
     if (isset($_POST['restore'])) {
         PluginAssettermsConfig::delete($eid);
@@ -92,7 +96,6 @@ $t = $effective['texts'];
 <form id="form-assetterms-config" class="termo-card" method="post" action="<?= $e($self) ?>" enctype="multipart/form-data"
       data-preview="<?= $e(PluginAssettermsTerm::webPath() . '/ajax/preview.php') ?>">
     <input type="hidden" name="entities_id" value="<?= $eid ?>">
-    <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
     <h4 class="section-title"><i class="ti ti-building"></i> Empresa</h4>
     <div class="termo-config-grid">

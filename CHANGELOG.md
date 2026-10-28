@@ -1,5 +1,10 @@
 # Changelog
 
+## [Não lançado]
+
+### Corrigido
+- GLPI 10: salvar ou restaurar a configuração não revalida o token CSRF já consumido pelo núcleo, evitando a mensagem "A ação que você requisitou não é permitida". O formulário usa o token inserido por `Html::closeForm()`, sem campo duplicado; a proteção CSRF do GLPI permanece ativa.
+
 ## [1.5.2] - 2026-10-27
 
 ### Segurança
