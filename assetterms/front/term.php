@@ -24,6 +24,10 @@ Html::header(PluginAssettermsMenu::getTypeName(), '', 'assets', 'PluginAssetterm
 echo '<div class="termo-container">';
 echo '<form class="termo-card termo-picker" method="get" action="' . htmlspecialchars(PluginAssettermsTerm::webPath() . '/front/term.php', ENT_QUOTES) . '">';
 echo '<h3 class="termo-title"><i class="ti ti-file-certificate"></i> Termos de Responsabilidade';
+if (Session::haveRight('computer', UPDATE)) {
+    echo ' <a class="btn btn-sm btn-outline-secondary ms-2" href="' . htmlspecialchars(PluginAssettermsSignature::pageUrl(), ENT_QUOTES)
+        . '"><i class="ti ti-signature"></i> Minha assinatura</a>';
+}
 if (Session::haveRight('config', UPDATE)) {
     echo ' <a class="btn btn-sm btn-outline-secondary ms-2" href="' . htmlspecialchars(PluginAssettermsTerm::webPath() . '/front/config.php', ENT_QUOTES)
         . '"><i class="ti ti-settings"></i> Configurar empresa e texto</a>';

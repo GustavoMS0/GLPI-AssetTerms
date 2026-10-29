@@ -492,7 +492,7 @@ class PluginAssettermsTerm extends CommonGLPI
     {
         $cfg = PluginAssettermsConfig::getEffective((int) $computer->fields['entities_id']);
 
-        return [
+        return self::techData($tech_id) + [
             'tipo'         => $in['tipo'],
             'computers_id' => (int) $computer->getID(),
             'entities_id'  => (int) $computer->fields['entities_id'],
@@ -503,8 +503,6 @@ class PluginAssettermsTerm extends CommonGLPI
             'texto'        => self::clausula($in['tipo'], $cfg),
             // Formato definido na configuração (padrão: aleatório); {seq} reserva o próximo número
             'codigo'       => PluginAssettermsConfig::buildCode($cfg, $in['tipo'], time()),
-            'tecnico'      => self::userName($tech_id) ?: 'TI',
-            'tecnico_id'   => $tech_id,
             'colaborador'  => self::userData($in['users_id']) + ['id' => $in['users_id']],
             'equipamento'  => array_merge(self::getComputerSpecs($computer), $in['equipamento'] ?? []) + [
                 'nome'       => self::fromCore((string) ($computer->fields['name'] ?? '')),
@@ -514,6 +512,23 @@ class PluginAssettermsTerm extends CommonGLPI
             'checklist'    => $in['checklist'],
             'observacoes'  => $in['observacoes'],
             'state_id'     => $in['state_id'],
+        ];
+    }
+
+    /**
+     * Quem emite o termo (TI): nome, login e a assinatura cadastrada naquele momento (PNG em base64,
+     * '' se não houver). Fica no pedido enviado por link: trocar a assinatura depois não muda o termo.
+     */
+    public static function techData(int $tech_id): array
+    {
+        $user = new User();
+        $sig  = PluginAssettermsSignature::get($tech_id);
+        return [
+            'tecnico'                 => self::userName($tech_id) ?: 'TI',
+            'tecnico_id'              => $tech_id,
+            'tecnico_login'           => $user->getFromDB($tech_id) ? self::fromCore((string) $user->fields['name']) : '',
+            'tecnico_assinatura'      => $sig['image'] ?? '',
+            'tecnico_assinatura_tipo' => $sig['kind'] ?? '',
         ];
     }
 
@@ -1221,6 +1236,11 @@ class PluginAssettermsTerm extends CommonGLPI
         if ($d['assinatura'] !== '') {
             $pdf->Image('@' . $d['assinatura'], $left + 5, $y, $w - 10, 22, 'PNG', '', '', true, 300, '', false, false, 0, 'CM');
         }
+        // Assinatura cadastrada por quem emitiu (termos anteriores à 1.5.3 não têm o campo)
+        $tech_sig = (string) base64_decode((string) ($d['tecnico_assinatura'] ?? ''), true);
+        if ($tech_sig !== '') {
+            $pdf->Image('@' . $tech_sig, $right + 5, $y, $w - 10, 22, 'PNG', '', '', true, 300, '', false, false, 0, 'CM');
+        }
         $line = $y + 24;
         $pdf->Line($left, $line, $left + $w, $line);
         $pdf->Line($right, $line, $right + $w, $line);
@@ -1239,32 +1259,42 @@ class PluginAssettermsTerm extends CommonGLPI
             $registro = sprintf(
                 'Assinatura eletrônica simples (%s) feita pelo(a) próprio(a) colaborador(a) em %s, autenticado(a) no GLPI com o usuário "%s", '
                 . 'a partir do endereço IP %s, depois de declarar que leu e concorda com este termo. '
-                . 'Termo enviado para assinatura por %s em %s. Documento gerado e arquivado no GLPI. Código do documento: %s.',
+                . 'Termo enviado para assinatura por %s em %s. Documento gerado e arquivado no GLPI.',
                 $forma,
                 $d['data'],
                 $d['login'],
                 $d['ip'],
                 $d['tecnico'],
-                $d['enviado_em'],
-                $d['codigo']
+                $d['enviado_em']
             );
         } elseif ($d['assinatura'] !== '') {
             $registro = sprintf(
                 'Assinatura eletrônica simples (%s) do(a) colaborador(a) feita na tela em %s, na presença de %s, a partir do endereço IP %s. '
-                . 'Documento gerado e arquivado no GLPI. Código do documento: %s.',
+                . 'Documento gerado e arquivado no GLPI.',
                 $forma,
                 $d['data'],
                 $d['tecnico'],
-                $d['ip'],
-                $d['codigo']
+                $d['ip']
             );
         } else {
             $registro = sprintf(
-                'Documento gerado no GLPI em %s para assinatura manual. Após assinado, anexe a via digitalizada à aba Documentos do equipamento. Código do documento: %s.',
-                $d['data'],
-                $d['codigo']
+                'Documento gerado no GLPI em %s para assinatura manual. Após assinado, anexe a via digitalizada à aba Documentos do equipamento.',
+                $d['data']
             );
         }
+        // Quem emitiu: a assinatura cadastrada vale pelo login de quem gerou o termo
+        $login = (string) ($d['tecnico_login'] ?? '');
+        if ($tech_sig !== '') {
+            $registro .= sprintf(
+                ' Assinatura do(a) responsável pela TI (%s) aplicada eletronicamente a partir da assinatura cadastrada no GLPI pelo(a) próprio(a) %s, autenticado(a) com o usuário "%s", que emitiu o termo.',
+                ($d['tecnico_assinatura_tipo'] ?? '') === 'digitada' ? 'com o nome digitado' : 'desenhada',
+                $d['tecnico'],
+                $login
+            );
+        } elseif ($login !== '') {
+            $registro .= sprintf(' Termo emitido por %s, autenticado(a) no GLPI com o usuário "%s".', $d['tecnico'], $login);
+        }
+        $registro .= ' Código do documento: ' . $d['codigo'] . '.';
         $pdf->MultiCell(0, 3.5, $registro, 0, 'L');
 
         return $pdf->Output('termo.pdf', 'S');
@@ -1407,6 +1437,7 @@ class PluginAssettermsTerm extends CommonGLPI
         $cfg       = PluginAssettermsConfig::getEffective((int) ($computer->fields['entities_id'] ?? 0));
         $clausulas = ['entrega' => self::clausula('entrega', $cfg), 'devolucao' => self::clausula('devolucao', $cfg)];
         $options   = $can_edit ? self::equipmentOptions() : [];
+        $tech_sig  = $can_edit && PluginAssettermsSignature::get((int) Session::getLoginUserID()) !== null;
         ?>
         <div class="termo-container">
             <div class="termo-card termo-header-card">
@@ -1645,6 +1676,14 @@ class PluginAssettermsTerm extends CommonGLPI
                     </div>
                 </div>
                 <small class="termo-hint d-block mt-2" data-mode="termo">
+                    <?php if ($tech_sig): ?>
+                        <i class="ti ti-signature"></i> O termo sai com a <strong>sua assinatura cadastrada</strong> no lado da TI.
+                        <a href="<?= $e(PluginAssettermsSignature::pageUrl()) ?>" target="_blank" rel="noopener">Trocar</a>
+                    <?php else: ?>
+                        <i class="ti ti-signature"></i> Você não tem assinatura cadastrada: o lado da TI sai com o seu nome e o registro do seu usuário, sem a imagem.
+                        <a href="<?= $e(PluginAssettermsSignature::pageUrl()) ?>" target="_blank" rel="noopener">Cadastrar minha assinatura</a>
+                    <?php endif; ?>
+                    <br>
                     <?php if ($mail): ?>
                         Pelo e-mail ou pelo link, o colaborador entra no GLPI com o próprio usuário e assina. O equipamento só é atualizado depois da assinatura.
                     <?php else: ?>

@@ -124,8 +124,9 @@ class PluginAssettermsConfig extends CommonGLPI
      * Versão atual do banco do plugin. Cada passo de migrate() roda uma única vez, em ordem:
      *   1 = 1.4.0: código do termo com até 100 caracteres
      *   2 = 1.5.1: tabela dos documentos gerados (histórico sem depender do nome do documento)
+     *   3 = 1.5.3: tabela das assinaturas cadastradas por quem emite os termos (TI)
      */
-    public const SCHEMA_VERSION = 2;
+    public const SCHEMA_VERSION = 3;
 
     private static function schemaVersion(): int
     {
@@ -153,6 +154,10 @@ class PluginAssettermsConfig extends CommonGLPI
             $result = $DB->doQuery('SELECT MAX(`id`) AS max_id FROM `glpi_documents`');
             $max    = $result ? (int) ($result->fetch_assoc()['max_id'] ?? 0) : 0;
             Config::setConfigurationValues(self::CONFIG_CONTEXT, ['legacy_max_documents_id' => $max]);
+        }
+
+        if ($version < 3) {
+            PluginAssettermsSignature::installSchema();
         }
 
         if ($version < self::SCHEMA_VERSION) {

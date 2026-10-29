@@ -29,9 +29,9 @@ if (!Session::haveAccessToEntity($eid)) {
 }
 
 // ----------------------------------------------------------------- Gravação
+// O CSRF já foi validado pelo GLPI (includes.php no 10, CheckCsrfListener no 11), que consome o
+// token: validar de novo aqui falha sempre com "A ação que você requisitou não é permitida"
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-    Session::checkCSRF($_POST);
-
     if (isset($_POST['restore'])) {
         PluginAssettermsConfig::delete($eid);
         Session::addMessageAfterRedirect('Configuração removida. Esta entidade passa a usar a da entidade acima ou o texto padrão.', true, INFO);
@@ -92,7 +92,6 @@ $t = $effective['texts'];
 <form id="form-assetterms-config" class="termo-card" method="post" action="<?= $e($self) ?>" enctype="multipart/form-data"
       data-preview="<?= $e(PluginAssettermsTerm::webPath() . '/ajax/preview.php') ?>">
     <input type="hidden" name="entities_id" value="<?= $eid ?>">
-    <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
     <h4 class="section-title"><i class="ti ti-building"></i> Empresa</h4>
     <div class="termo-config-grid">

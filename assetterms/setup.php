@@ -31,7 +31,7 @@
  * ------------------------------------------------------------------------
  */
 
-define('PLUGIN_ASSETTERMS_VERSION', '1.5.2');
+define('PLUGIN_ASSETTERMS_VERSION', '1.5.3');
 define('PLUGIN_ASSETTERMS_MIN_GLPI', '10.0.0');
 define('PLUGIN_ASSETTERMS_MAX_GLPI', '11.0.99');
 // Mínimo do GLPI 10.0. str_contains/str_ends_with vêm do symfony/polyfill-php80, que o GLPI 10 já traz
@@ -65,7 +65,10 @@ function plugin_init_assetterms()
 
     // GLPI 11 serve os arquivos estáticos a partir de public/; o GLPI 10, da raiz do plugin
     $uri   = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
-    $pages = ['/front/computer.form.php', '/assetterms/front/sign.php', '/assetterms/front/term.php', '/assetterms/front/config.php'];
+    $pages = [
+        '/front/computer.form.php', '/assetterms/front/sign.php', '/assetterms/front/term.php',
+        '/assetterms/front/config.php', '/assetterms/front/signature.php',
+    ];
     if (array_filter($pages, static fn ($p) => str_ends_with($uri, $p))) {
         $prefix = version_compare(GLPI_VERSION, '11.0.0-dev', '>=') ? '' : 'public/';
         $PLUGIN_HOOKS['add_javascript']['assetterms'] = [$prefix . 'js/assetterms.js'];

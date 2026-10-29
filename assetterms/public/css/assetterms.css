@@ -457,6 +457,22 @@
     font-weight: 400;
 }
 
+/* Minha assinatura: a cadastrada, sobre fundo branco como no PDF */
+.termo-tech-signature {
+    margin-top: 12px;
+}
+
+.termo-tech-signature img {
+    display: block;
+    max-width: 320px;
+    max-height: 90px;
+    object-fit: contain;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 6px;
+}
+
 /* Configuração: logo atual, campo largo e caixa de opção */
 .termo-logo-preview {
     max-width: 200px;

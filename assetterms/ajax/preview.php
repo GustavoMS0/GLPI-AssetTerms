@@ -69,7 +69,7 @@ if ($logo !== null) {
 }
 
 $tipo  = ($_POST['preview_tipo'] ?? '') === 'devolucao' ? 'devolucao' : 'entrega';
-$dados = PluginAssettermsTerm::withDate([
+$dados = PluginAssettermsTerm::withDate(PluginAssettermsTerm::techData((int) Session::getLoginUserID()) + [
     'tipo'         => $tipo,
     'entities_id'  => $eid,
     'empresa'      => $cfg['company_name'],
@@ -77,8 +77,6 @@ $dados = PluginAssettermsTerm::withDate([
     'cidade'       => $cfg['city'],
     'codigo'       => PluginAssettermsConfig::buildCode($cfg, $tipo, time(), false),
     'marca'        => $cfg,
-    'tecnico'      => PluginAssettermsTerm::userName((int) Session::getLoginUserID()) ?: 'Técnico da TI',
-    'tecnico_id'   => (int) Session::getLoginUserID(),
     'colaborador'  => ['id' => 0, 'nome' => 'Nome do Colaborador', 'matricula' => '000123', 'email' => 'colaborador@empresa.com.br'],
     'equipamento'  => [
         'nome' => 'NB-EXEMPLO', 'tipo' => 'Notebook', 'fabricante' => 'Dell Inc.', 'modelo' => 'Latitude 5440',
