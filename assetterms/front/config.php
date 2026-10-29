@@ -29,13 +29,9 @@ if (!Session::haveAccessToEntity($eid)) {
 }
 
 // ----------------------------------------------------------------- Gravação
+// O CSRF já foi validado pelo GLPI (includes.php no 10, CheckCsrfListener no 11), que consome o
+// token: validar de novo aqui falha sempre com "A ação que você requisitou não é permitida"
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-    // No GLPI 10, inc/includes.php já validou e consumiu o token deste POST.
-    // Revalidá-lo aqui rejeita um formulário legítimo antes de salvar/restaurar.
-    if (version_compare(GLPI_VERSION, '11.0.0-dev', '>=')) {
-        Session::checkCSRF($_POST);
-    }
-
     if (isset($_POST['restore'])) {
         PluginAssettermsConfig::delete($eid);
         Session::addMessageAfterRedirect('Configuração removida. Esta entidade passa a usar a da entidade acima ou o texto padrão.', true, INFO);

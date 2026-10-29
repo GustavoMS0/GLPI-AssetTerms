@@ -252,6 +252,15 @@ Nenhum PDF é gerado. O histórico do computador registra, por exemplo:
 - a declaração;
 - as assinaturas do colaborador e da TI, com a cidade e a data por extenso.
 
+### Assinatura de quem emite (TI)
+
+Cada técnico cadastra a própria assinatura uma vez, em **Ativos › Termos de Responsabilidade › Minha assinatura**. Pode desenhar ou digitar o nome, como o colaborador. O formulário do termo também tem um link para essa página.
+
+- **Com assinatura cadastrada:** ela vai na linha **Entregue por / Recebido por (TI)** de todo termo que o técnico gerar: na tela, no PDF para o papel e nos enviados por e-mail ou link. O registro no rodapé do PDF diz que ela foi aplicada a partir do cadastro, com o usuário do GLPI de quem emitiu.
+- **Sem assinatura cadastrada:** a linha da TI fica só com o nome, e o registro diz quem emitiu o termo e com qual usuário.
+
+O termo guarda a assinatura do momento em que foi gerado. Trocar ou remover a assinatura depois não muda os termos já gerados nem os que aguardam assinatura pelo link.
+
 O nome da empresa, o CNPJ, a cidade e o texto vêm da **configuração** (veja abaixo). Sem configuração, o plugin usa o nome e a cidade da entidade do computador e o texto padrão.
 
 ---
@@ -402,7 +411,7 @@ A interface é escrita em português. Os textos passados por `__('...', 'assette
 | Perfil | Vê a aba e o menu | Gera, envia e cancela termos e muda o status |
 |---|---|---|
 | Pode **ver** computadores | sim, só as listas de termos | não |
-| Pode **alterar** o computador | sim | sim |
+| Pode **alterar** o computador | sim, e cadastra a própria assinatura | sim |
 | **Qualquer usuário**, inclusive do autoatendimento | não | assina pelo link só os termos enviados para ele |
 
 A **tela de configuração** (empresa e texto) é só para quem pode **alterar a configuração do GLPI** (Configurar › Geral), normalmente o Super-Admin.

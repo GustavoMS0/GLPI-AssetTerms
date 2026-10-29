@@ -13,14 +13,17 @@
  */
 
 /**
- * Cria as tabelas dos termos enviados para assinatura e da configuração por empresa. Os PDFs ficam na aba Documentos do GLPI
+ * Cria as tabelas dos termos enviados para assinatura, das assinaturas cadastradas pela TI e da configuração
+ * por empresa. Os PDFs ficam na aba Documentos do GLPI
  * e continuam lá mesmo se o plugin for removido.
  */
 function plugin_assetterms_install()
 {
     include_once __DIR__ . '/inc/term.class.php';
     include_once __DIR__ . '/inc/config.class.php';
+    include_once __DIR__ . '/inc/signature.class.php';
     PluginAssettermsTerm::installSchema();
+    PluginAssettermsSignature::installSchema();
     PluginAssettermsConfig::installSchema();
     return true;
 }
@@ -33,7 +36,9 @@ function plugin_assetterms_uninstall()
 {
     include_once __DIR__ . '/inc/term.class.php';
     include_once __DIR__ . '/inc/config.class.php';
+    include_once __DIR__ . '/inc/signature.class.php';
     PluginAssettermsTerm::uninstallSchema();
+    PluginAssettermsSignature::uninstallSchema();
     PluginAssettermsConfig::uninstallSchema();
     return true;
 }

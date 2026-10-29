@@ -1,9 +1,10 @@
 # Changelog
 
-## [Não lançado]
+## [1.5.3] - 2026-10-29
 
 ### Corrigido
-- GLPI 10: salvar ou restaurar a configuração não revalida o token CSRF já consumido pelo núcleo, evitando a mensagem "A ação que você requisitou não é permitida". O formulário usa o token inserido por `Html::closeForm()`, sem campo duplicado; a proteção CSRF do GLPI permanece ativa.
+- **Assinatura de quem emite o termo (TI):** a linha "Entregue por / Recebido por (TI)" saía só com o nome, sem assinatura. Agora cada técnico cadastra a própria assinatura (desenhada ou com o nome digitado) em **Ativos › Termos de Responsabilidade › Minha assinatura**, e ela vai em todo termo que ele gerar. O registro do PDF diz que ela foi aplicada a partir do cadastro, com o usuário do GLPI. Sem assinatura cadastrada, o registro diz quem emitiu o termo e com qual usuário. O termo guarda a assinatura do momento em que foi gerado.
+- Configuração: salvar ou restaurar dava "A ação que você requisitou não é permitida" no GLPI 10 e 11 (#2). A 1.5.1 passou a validar o token CSRF de novo na página, mas o GLPI já valida e consome o token antes (`inc/includes.php` no 10, `CheckCsrfListener` no 11), então a segunda validação falhava sempre. O formulário usa só o token de `Html::closeForm()`, sem campo duplicado; a proteção CSRF do GLPI continua ativa. Correção para o GLPI 10 enviada por @Wellington-Leite (#1) e estendida ao GLPI 11.
 
 ## [1.5.2] - 2026-10-27
 

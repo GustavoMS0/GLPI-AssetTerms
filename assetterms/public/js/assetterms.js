@@ -5,6 +5,7 @@
  * - Aba do computador e Ativos > Termos (#form-termo-responsabilidade): assinatura na
  *   tela, envio por e-mail, link de assinatura, PDF para o papel e "somente ciclo de vida".
  * - Página do link enviado por e-mail (#form-termo-assinatura): o colaborador assina.
+ * - Minha assinatura (#form-termo-minha-assinatura): o técnico cadastra a dele, que vai nos termos.
  *
  * A aba é carregada por AJAX depois da página, então os formulários são
  * iniciados quando aparecem no DOM (MutationObserver).
@@ -666,6 +667,29 @@
         });
     }
 
+    // ------------------------------- Minha assinatura (quem emite os termos)
+    function initMySignature(form) {
+        if (form.dataset.termoReady) return;
+        form.dataset.termoReady = '1';
+
+        const pad = signaturePad(form);
+        const ui = feedback(form);
+
+        // Envio normal do formulário: o GLPI valida o token CSRF dele antes da página
+        form.querySelector('#btn-save-my-signature').addEventListener('click', function () {
+            if (!pad.hasDrawn()) {
+                ui.show('warning', pad.kind() === 'digitada'
+                    ? 'Digite seu nome completo para a assinatura eletrônica.'
+                    : 'Assine no quadro antes de salvar.');
+                return;
+            }
+            form.querySelector('[name="signature_image"]').value = pad.png();
+            form.querySelector('[name="signature_kind"]').value = pad.kind();
+            ui.busy(true);
+            form.submit();
+        });
+    }
+
     // --------------------------------------- Configuração (empresa e texto)
     function initConfig(form) {
         if (form.dataset.termoReady) return;
@@ -726,6 +750,8 @@
         if (tab) initTab(tab);
         const sign = document.getElementById('form-termo-assinatura');
         if (sign) initSign(sign);
+        const mine = document.getElementById('form-termo-minha-assinatura');
+        if (mine) initMySignature(mine);
     }
 
     new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });
