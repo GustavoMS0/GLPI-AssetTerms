@@ -590,6 +590,7 @@ class PluginAssettermsTerm extends CommonGLPI
      */
     public static function archive(Computer $computer, array $d, int $time): array
     {
+        global $DB;
         $pdf     = self::buildPdf($d);
         $titulo  = $d['tipo'] === 'devolucao' ? 'Termo de Devolução' : 'Termo de Entrega';
         $arquivo = self::fileName($d, $time);
@@ -642,6 +643,10 @@ class PluginAssettermsTerm extends CommonGLPI
                 throw new RuntimeException('Não foi possível vincular o documento ao computador.');
             }
             self::registerDocument($doc_id, (int) $computer->getID(), $d);
+            // O GLPI grava como dono do documento quem está logado, e na assinatura pelo link é o colaborador
+            if ((int) $d['tecnico_id'] > 0 && (int) ($document->fields['users_id'] ?? 0) !== (int) $d['tecnico_id']) {
+                $DB->update('glpi_documents', ['users_id' => (int) $d['tecnico_id']], ['id' => $doc_id]);
+            }
 
             $update = ['id' => (int) $computer->getID(), 'users_id' => $d['tipo'] === 'entrega' ? (int) $d['colaborador']['id'] : 0];
             if ($d['tipo'] === 'devolucao') {
@@ -1019,6 +1024,11 @@ class PluginAssettermsTerm extends CommonGLPI
         $controle = $layout === 'controle' ? $marca['doc_control'] : null;
         $logo     = (string) ($marca['logo'] ?? '');
         $logoType = ($marca['logo_mime'] ?? '') === 'image/jpeg' ? 'JPG' : 'PNG';
+        // Logo salvo antes da 1.5.4, quando as dimensões não eram conferidas: grande demais, fica de fora
+        $logoInfo = $logo !== '' ? @getimagesizefromstring($logo) : false;
+        if ($logo !== '' && ($logoInfo === false || $logoInfo[0] > PluginAssettermsConfig::LOGO_MAX_PX || $logoInfo[1] > PluginAssettermsConfig::LOGO_MAX_PX)) {
+            $logo = '';
+        }
 
         // Sem o texto "Powered by TCPDF" que a biblioteca acrescenta ao fim do documento.
         // Layout "simples": logo e título na primeira página, rodapé com o número da página.
@@ -1034,6 +1044,16 @@ class PluginAssettermsTerm extends CommonGLPI
             public function semCredito(): void
             {
                 $this->tcpdflink = false;
+            }
+
+            /**
+             * O TCPDF encerra o PHP com die() em caso de erro (K_TCPDF_THROW_EXCEPTION_ERROR é false
+             * por padrão), e aí nenhum catch roda: o número reservado não volta e a resposta não sai em
+             * JSON. Com a exceção, quem chama trata como qualquer outra falha ao gerar o PDF.
+             */
+            public function Error($msg)
+            {
+                throw new Exception('TCPDF: ' . $msg);
             }
 
             /** Célula do cabeçalho: rótulo pequeno em cima e valor em negrito embaixo */
@@ -1089,10 +1109,20 @@ class PluginAssettermsTerm extends CommonGLPI
                 // "Página X de Y": os números só existem no fim, então a centralização usa a largura de
                 // um texto equivalente (o TCPDF centralizaria pelo marcador, que é mais largo)
                 $this->Rect($x5, $y0 + 2 * $h, $w[4], $h);
-                $this->SetFont('dejavusans', 'B', 9);
-                $largura = $this->GetStringWidth('Página 9 de 9');
+                // Termos longos passam de 9 páginas: a referência tem dois dígitos, a fonte diminui se
+                // não couber e a célula fica sem a margem interna, para o texto não passar da borda
+                $tam = 9;
+                $this->SetFont('dejavusans', 'B', $tam);
+                while ($tam > 7 && $this->GetStringWidth('Página 99 de 99') > $w[4] - 2) {
+                    $tam -= 0.5;
+                    $this->SetFont('dejavusans', 'B', $tam);
+                }
+                $largura = $this->GetStringWidth('Página 99 de 99');
+                $padding = $this->getCellPaddings();
+                $this->setCellPaddings(0, $padding['T'], 0, $padding['B']);
                 $this->SetXY($x5 + max(1, ($w[4] - $largura) / 2), $y0 + 2 * $h);
                 $this->Cell($largura, $h, 'Página ' . $this->getAliasNumPage() . ' de ' . $this->getAliasNbPages(), 0, 0, 'L');
+                $this->setCellPaddings($padding['L'], $padding['T'], $padding['R'], $padding['B']);
             }
 
             public function Footer()

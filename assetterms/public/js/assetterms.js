@@ -15,9 +15,11 @@
 (function () {
     'use strict';
 
+    // Sem a meta (página montada fora do layout padrão), usa o token de algum formulário do GLPI na página
     function csrfToken() {
         const meta = document.querySelector('meta[property="glpi:csrf_token"]');
-        return meta ? meta.getAttribute('content') : '';
+        const input = document.querySelector('input[name="_glpi_csrf_token"]');
+        return (meta && meta.getAttribute('content')) || (input ? input.value : '');
     }
 
     function post(url, formData) {

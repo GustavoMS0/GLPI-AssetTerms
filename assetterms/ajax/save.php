@@ -206,6 +206,8 @@ $dados = PluginAssettermsTerm::withDate($dados, $agora) + [
 try {
     if ($modo === 'papel') {
         $pdf = PluginAssettermsTerm::buildPdf($dados);
+        // Cada PDF para o papel usa um código (e, com {seq}, um número): o histórico registra qual saiu
+        PluginAssettermsTerm::history($cid, "{$titulo} gerado em PDF para assinatura no papel de {$dados['colaborador']['nome']}. Código: {$dados['codigo']}.");
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="' . rawurlencode(PluginAssettermsTerm::fileName($dados, $agora)) . '"');
         header('Cache-Control: no-store');

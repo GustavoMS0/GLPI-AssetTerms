@@ -231,6 +231,7 @@ $t = $effective['texts'];
 
         <label class="termo-label mt-3" for="<?= $tipo ?>_compromissos">
             <?= $tipo === 'entrega' ? 'Compromissos (numerados I, II, III...)' : 'Itens da conferência' ?>: um por linha
+            <span class="text-muted fw-normal">(até <?= PluginAssettermsConfig::MAX_ITEMS ?> itens, <?= PluginAssettermsConfig::MAX_ITEM ?> caracteres cada)</span>
         </label>
         <textarea class="form-control" id="<?= $tipo ?>_compromissos" name="<?= $tipo ?>_compromissos" rows="6"><?= $e(implode("\n", $t[$tipo]['compromissos'])) ?></textarea>
 
