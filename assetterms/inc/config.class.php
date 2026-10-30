@@ -29,7 +29,9 @@ class PluginAssettermsConfig extends CommonGLPI
     /** Limites dos campos de texto */
     public const MAX_LINE = 255;
     public const MAX_TEXT = 4000;
-    public const MAX_ITEMS = 20;
+    /** Compromissos (ou itens da conferência) por termo e tamanho de cada um */
+    public const MAX_ITEMS = 50;
+    public const MAX_ITEM = 1000;
 
     public static function getTypeName($nb = 0)
     {
@@ -445,8 +447,16 @@ class PluginAssettermsConfig extends CommonGLPI
         if ($info === false || !in_array($info['mime'] ?? '', ['image/png', 'image/jpeg'], true)) {
             return 'O logo deve ser uma imagem PNG ou JPG.';
         }
+        // Um arquivo pequeno pode declarar dimensões enormes: no PDF, a imagem é aberta inteira na
+        // memória, e o logo salvo faria falhar todos os termos da empresa
+        if ((int) $info[0] > self::LOGO_MAX_PX || (int) $info[1] > self::LOGO_MAX_PX) {
+            return sprintf('O logo deve ter no máximo %1$d x %1$d pixels. Reduza a imagem e envie de novo.', self::LOGO_MAX_PX);
+        }
         return ['data' => $data, 'mime' => $info['mime']];
     }
+
+    /** Lado máximo do logo, em pixels (no PDF ele ocupa até 50 x 16 mm, ~600 x 190 px a 300 dpi) */
+    public const LOGO_MAX_PX = 3000;
 
     /**
      * Texto de um termo com os marcadores trocados pelos dados da empresa.
@@ -482,9 +492,16 @@ class PluginAssettermsConfig extends CommonGLPI
 
         $texts = [];
         foreach (array_keys(self::defaultTexts()) as $tipo) {
-            $items = array_values(array_filter(array_map($line, explode("\n", str_replace("\r", '', (string) ($post["{$tipo}_compromissos"] ?? '')))), 'strlen'));
+            $item  = static fn ($v): string => trim(preg_replace('/\s+/u', ' ', (string) $v));
+            $items = array_values(array_filter(array_map($item, explode("\n", str_replace("\r", '', (string) ($post["{$tipo}_compromissos"] ?? '')))), 'strlen'));
             if (count($items) > self::MAX_ITEMS) {
                 return 'Use no máximo ' . self::MAX_ITEMS . ' compromissos por termo.';
+            }
+            // Até a 1.5.3 o item era cortado sem aviso em 255 caracteres
+            foreach ($items as $i => $text) {
+                if (mb_strlen($text) > self::MAX_ITEM) {
+                    return sprintf('O item %d %s passa de %d caracteres. Divida-o em mais de uma linha.', $i + 1, $tipo === 'entrega' ? 'dos compromissos' : 'da conferência', self::MAX_ITEM);
+                }
             }
             $texts[$tipo] = [
                 'titulo'       => $line($post["{$tipo}_titulo"] ?? ''),

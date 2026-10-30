@@ -102,7 +102,10 @@ try {
     return;
 }
 
-$DB->update(PluginAssettermsTerm::TABLE, ['documents_id' => $doc_id], ['id' => (int) $req['id']]);
+// O termo já está arquivado; sem o vínculo, o pedido fica assinado mas sem apontar para o documento
+if (!$DB->update(PluginAssettermsTerm::TABLE, ['documents_id' => $doc_id], ['id' => (int) $req['id']])) {
+    Toolbox::logInFile('php-errors', 'Asset Terms: termo #' . (int) $req['id'] . ' assinado e arquivado no documento #' . $doc_id . ', mas o pedido não foi atualizado com o documento.' . "\n");
+}
 $copia = PluginAssettermsTerm::sendSignedMails($req, $pdf, PluginAssettermsTerm::fileName($dados, $agora), $dados['data']);
 
 $json([

@@ -279,11 +279,11 @@ Em **Configurar › Plugins**, clique em **Asset Terms**. Administradores també
 3. **Texto do termo de entrega e do termo de devolução:**
    - título;
    - declaração;
-   - compromissos, um por linha (na entrega saem numerados I, II, III...);
+   - compromissos, um por linha (na entrega saem numerados I, II, III...), até 50 itens de até 1.000 caracteres cada;
    - parágrafo final.
 4. **Código do documento** (veja abaixo).
 5. **Aparência do documento:**
-   - **Logo:** PNG ou JPG de até 1 MB. Fica no topo do PDF, à esquerda, com até 5 x 1,6 cm, sem distorcer;
+   - **Logo:** PNG ou JPG de até 1 MB e até 3000 x 3000 pixels. Fica no topo do PDF, à esquerda, com até 5 x 1,6 cm, sem distorcer;
    - **Cor principal:** cor do título e das seções do PDF;
    - **Rodapé:** texto no pé de todas as páginas, como endereço, telefone ou site, ao lado do número da página.
 6. **Cabeçalho e rodapé:** escolha o modelo (veja abaixo).

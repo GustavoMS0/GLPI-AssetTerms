@@ -236,10 +236,11 @@
     margin-bottom: 20px;
 }
 
+/* O laranja do tema sobre o fundo claro fica abaixo do contraste mínimo (WCAG AA): a cor fica só na borda */
 .termo-clausula-box strong {
     display: block;
     margin-bottom: 6px;
-    color: var(--tblr-warning, #92400e);
+    color: inherit;
 }
 
 .termo-clausula-box p {
@@ -280,7 +281,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    color: #94a3b8;
+    color: #64748b;
     font-size: 0.875rem;
     pointer-events: none;
     transition: opacity 0.2s ease;

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.4] - 2026-10-30
+
+### Alterado
+- Compromissos (e itens da conferência) por termo: o limite passa de 20 para **50**, com até 1.000 caracteres cada (#3). Antes, um item com mais de 255 caracteres era cortado sem aviso; agora a configuração avisa qual item passou do limite. O campo mostra os limites.
+
+### Corrigido
+- Erro interno do TCPDF (ex.: imagem corrompida) encerrava o PHP com `die()`: o número sequencial reservado se perdia, a resposta vinha em HTML em vez de JSON e, na assinatura pelo link, o pedido podia ficar como assinado sem documento. Agora o erro vira exceção e passa pelo mesmo tratamento das outras falhas ao gerar o PDF.
+- Logo: imagens com mais de 3000 x 3000 pixels são recusadas. Um arquivo pequeno que declara dimensões enormes estourava a memória ao gerar o PDF, e o logo salvo fazia falhar todos os termos da empresa. Um logo assim salvo antes desta versão fica fora do PDF.
+- Assinatura pelo link: o documento ficava com o colaborador como dono, porque o GLPI grava quem está logado. Agora o dono é quem emitiu o termo, como na assinatura na tela.
+- PDF para assinar no papel: o histórico do computador registra cada PDF gerado e o código usado, para nenhum número sequencial ({seq}) sumir sem registro.
+- Cabeçalho de controle de documentos: "Página X de Y" cabe na célula também com 10 páginas ou mais.
+- Reenviar e cancelar termos pendentes usam o token CSRF de um formulário da página quando a meta `glpi:csrf_token` não existe.
+- Contraste (WCAG AA): o título do quadro do termo deixa de usar o laranja do tema sobre fundo claro, e o texto de ajuda do quadro de assinatura ficou mais escuro.
+
 ## [1.5.3] - 2026-10-29
 
 ### Corrigido
