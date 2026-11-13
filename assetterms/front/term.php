@@ -16,6 +16,7 @@ if (!defined('GLPI_ROOT')) {
 Session::checkRight('computer', READ);
 
 $id       = (int) ($_GET['id'] ?? 0);
+$busca    = PluginAssettermsTerm::archivedSearchQuery();
 $computer = new Computer();
 $found    = $id > 0 && $computer->getFromDB($id) && $computer->canViewItem() && !$computer->isTemplate();
 
@@ -23,6 +24,9 @@ Html::header(PluginAssettermsMenu::getTypeName(), '', 'assets', 'PluginAssetterm
 
 echo '<div class="termo-container">';
 echo '<form class="termo-card termo-picker" method="get" action="' . htmlspecialchars(PluginAssettermsTerm::webPath() . '/front/term.php', ENT_QUOTES) . '">';
+if ($busca !== '') {
+    echo '<input type="hidden" name="busca" value="' . htmlspecialchars($busca, ENT_QUOTES, 'UTF-8') . '">';
+}
 echo '<h3 class="termo-title"><i class="ti ti-file-certificate"></i> Termos de Responsabilidade';
 if (Session::haveRight('computer', UPDATE)) {
     echo ' <a class="btn btn-sm btn-outline-secondary ms-2" href="' . htmlspecialchars(PluginAssettermsSignature::pageUrl(), ENT_QUOTES)
@@ -58,6 +62,9 @@ if ($found) {
 
 echo '<div class="termo-container">';
 PluginAssettermsTerm::showPending(PluginAssettermsTerm::getAllPendingRequests(), true);
+$archived_has_more = false;
+$archived          = PluginAssettermsTerm::getArchivedDocuments($busca, 100, $archived_has_more);
+PluginAssettermsTerm::showArchived($archived, $busca, $found ? $id : 0, $archived_has_more);
 echo '</div>';
 
 Html::footer();

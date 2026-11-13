@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.5] - 2026-11-13
+
+### Adicionado
+
+- **Listagem e busca de "Termos arquivados" em Ativos › Termos de Responsabilidade**: exibe os termos emitidos e arquivados em PDF (registrados pelo plugin desde a versão 1.5.1), com busca por equipamento, colaborador ou código, link para a ficha do equipamento e abertura direta do PDF (@karenMoraes2021, #4).
+
+### Segurança e Compatibilidade
+
+- **Isolamento por entidade e permissões na listagem de arquivados**: respeita entidades ativas e recursividade em `glpi_documents`, restringe a listagem quando o perfil não possui permissão em Documentos ou quando o equipamento pertence a outra entidade, trata equipamentos na lixeira/excluídos com segurança e utiliza `$DB->request()` com escaping para `LIKE` e compatibilidade com GLPI 10 e GLPI 11.
+
 ## [1.5.4] - 2026-10-30
 
 ### Alterado

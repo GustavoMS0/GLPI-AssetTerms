@@ -1414,6 +1414,254 @@ class PluginAssettermsTerm extends CommonGLPI
         <?php
     }
 
+    /** Lê e normaliza o filtro de busca da listagem de termos arquivados. */
+    public static function archivedSearchQuery(): string
+    {
+        $raw   = is_string($_GET['busca'] ?? null) ? $_GET['busca'] : '';
+        $busca = trim(self::fromCore($raw));
+
+        return function_exists('mb_substr') ? mb_substr($busca, 0, 150, 'UTF-8') : substr($busca, 0, 150);
+    }
+
+    /**
+     * Lista termos arquivados em PDF na entidade ativa (até $limit registros mais recentes).
+     * Perfis sem Document::canView() veem apenas documentos vinculados a computadores ativos visíveis.
+     */
+    public static function getArchivedDocuments(string $busca = '', int $limit = 100, ?bool &$has_more = null): array
+    {
+        global $DB;
+
+        $has_more = false;
+        $limit    = max(1, min(500, $limit));
+
+        if (!$DB->tableExists(self::DOCS_TABLE)) {
+            return [];
+        }
+
+        $can_view_docs = Document::canView();
+        $inner_joins   = [
+            'glpi_documents' => [
+                'ON' => [
+                    self::DOCS_TABLE => 'documents_id',
+                    'glpi_documents' => 'id',
+                ],
+            ],
+        ];
+        $computer_join = [
+            'ON' => [
+                self::DOCS_TABLE => 'computers_id',
+                'glpi_computers' => 'id',
+            ],
+        ];
+
+        $criteria = [
+            'SELECT' => [
+                self::DOCS_TABLE . '.id AS doc_link_id',
+                self::DOCS_TABLE . '.computers_id',
+                self::DOCS_TABLE . '.type',
+                self::DOCS_TABLE . '.code',
+                self::DOCS_TABLE . '.date_creation',
+                'glpi_documents.id',
+                'glpi_documents.name',
+                'glpi_documents.comment',
+                'glpi_documents.users_id',
+                'glpi_documents.date_creation AS doc_date_creation',
+                'glpi_computers.id AS computer_id',
+                'glpi_computers.name AS computer_name',
+                'glpi_computers.is_deleted AS computer_is_deleted',
+                'glpi_computers.entities_id AS computer_entities_id',
+                'glpi_computers.is_recursive AS computer_is_recursive',
+            ],
+            'FROM'   => self::DOCS_TABLE,
+        ];
+
+        if ($can_view_docs) {
+            $criteria['INNER JOIN'] = $inner_joins;
+            $criteria['LEFT JOIN']  = ['glpi_computers' => $computer_join];
+        } else {
+            $inner_joins['glpi_computers'] = $computer_join;
+            $criteria['INNER JOIN']        = $inner_joins;
+        }
+
+        $where   = ['glpi_documents.is_deleted' => 0];
+        $doc_ent = getEntitiesRestrictCriteria('glpi_documents', '', '', true);
+        if (!empty($doc_ent)) {
+            $where[] = $doc_ent;
+        }
+
+        $comp_ent = getEntitiesRestrictCriteria('glpi_computers', '', '', true);
+        if (!$can_view_docs) {
+            $where['glpi_computers.is_deleted']  = 0;
+            $where['glpi_computers.is_template'] = 0;
+            if (!empty($comp_ent)) {
+                $where[] = $comp_ent;
+            }
+        }
+
+        $busca = trim($busca);
+        if ($busca !== '') {
+            $raw_like   = '%' . strtr($busca, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%';
+            $db_like    = self::dbValues(['v' => $raw_like])['v'];
+            $doc_like   = self::coreInput($raw_like);
+            $comp_match = [
+                'glpi_computers.name'        => ['LIKE', $doc_like],
+                'glpi_computers.is_template' => 0,
+            ];
+            if ($can_view_docs && !empty($comp_ent)) {
+                $comp_match[] = $comp_ent;
+            }
+
+            $where[] = [
+                'OR' => [
+                    'glpi_documents.name'      => ['LIKE', $doc_like],
+                    'glpi_documents.comment'   => ['LIKE', $doc_like],
+                    self::DOCS_TABLE . '.code' => ['LIKE', $db_like],
+                    $comp_match,
+                ],
+            ];
+        }
+
+        $criteria['WHERE'] = $where;
+        $criteria['ORDER'] = [self::DOCS_TABLE . '.date_creation DESC', self::DOCS_TABLE . '.id DESC'];
+        $criteria['LIMIT'] = $limit + 1;
+
+        $rows  = [];
+        $users = [];
+        try {
+            foreach ($DB->request($criteria) as $row) {
+                if (count($rows) >= $limit) {
+                    $has_more = true;
+                    break;
+                }
+                $uid = (int) ($row['users_id'] ?? 0);
+                if ($uid > 0 && !isset($users[$uid])) {
+                    $users[$uid] = self::userName($uid);
+                }
+                $row['issuer'] = $uid > 0 ? $users[$uid] : '';
+                $rows[]        = $row;
+            }
+        } catch (\Throwable $ex) {
+            Toolbox::logInFile('php-errors', 'Asset Terms: falha ao listar termos arquivados: ' . $ex->getMessage() . "\n");
+            return [];
+        }
+
+        return $rows;
+    }
+
+    /** Lista e busca os termos de responsabilidade já arquivados em PDF. */
+    public static function showArchived(array $rows, string $busca = '', int $computer_id = 0, bool $has_more = false): void
+    {
+        global $CFG_GLPI;
+        $e        = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $form_url = self::webPath() . '/front/term.php#termo-arquivados';
+        $docs_url = $CFG_GLPI['root_doc']
+            . '/front/document.php?is_deleted=0&criteria[0][field]=1&criteria[0][searchtype]=contains&criteria[0][value]=Termo+de&reset=reset';
+        $clear_url = self::webPath() . '/front/term.php' . ($computer_id > 0 ? '?id=' . $computer_id : '') . '#termo-arquivados';
+        ?>
+        <div class="termo-card mt-4" id="termo-arquivados">
+            <div class="termo-section-header">
+                <h4 class="section-title mb-0"><i class="ti ti-archive"></i> Termos arquivados</h4>
+                <?php if (Document::canView()): ?>
+                    <a class="btn btn-sm btn-outline-secondary" href="<?= $e($docs_url) ?>">
+                        <i class="ti ti-external-link"></i> Ver todos em Documentos
+                    </a>
+                <?php endif; ?>
+            </div>
+            <form class="termo-archived-search" method="get" action="<?= $e($form_url) ?>">
+                <?php if ($computer_id > 0): ?>
+                    <input type="hidden" name="id" value="<?= $computer_id ?>">
+                <?php endif; ?>
+                <input type="search" class="form-control form-control-sm" name="busca" value="<?= $e($busca) ?>" maxlength="150"
+                       placeholder="Buscar equipamento, colaborador, código..." aria-label="Buscar termos arquivados">
+                <button type="submit" class="btn btn-sm btn-outline-primary">
+                    <i class="ti ti-search"></i> Buscar
+                </button>
+                <?php if ($busca !== ''): ?>
+                    <a class="btn btn-sm btn-outline-secondary" href="<?= $e($clear_url) ?>">
+                        <i class="ti ti-x"></i> Limpar
+                    </a>
+                <?php endif; ?>
+            </form>
+            <?php if (empty($rows)): ?>
+                <p class="text-muted p-3 mb-0"><?= $busca !== '' ? 'Nenhum termo arquivado encontrado para a busca informada.' : 'Nenhum termo arquivado registrado ainda.' ?></p>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped termo-history-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Equipamento</th>
+                                <th>Termo</th>
+                                <th>Detalhes</th>
+                                <th>Arquivado por</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($rows as $t):
+                                $date       = (string) (!empty($t['date_creation']) ? $t['date_creation'] : ($t['doc_date_creation'] ?? ''));
+                                $comp_id    = (int) ($t['computer_id'] ?? 0);
+                                $raw_comp   = (int) ($t['computers_id'] ?? 0);
+                                $comp_del   = !empty($t['computer_is_deleted']);
+                                $can_comp   = $comp_id > 0 && Session::haveAccessToEntity((int) ($t['computer_entities_id'] ?? 0), !empty($t['computer_is_recursive']));
+                                $tipo_label = $t['type'] === 'devolucao' ? 'Devolução' : ($t['type'] === 'entrega' ? 'Entrega' : '-');
+                                $code       = trim((string) ($t['code'] ?? ''));
+                                $doc_name   = self::fromCore((string) ($t['name'] ?? ''));
+                                $comment    = self::fromCore((string) ($t['comment'] ?? ''));
+                                $issuer     = trim((string) ($t['issuer'] ?? ''));
+                                ?>
+                                <tr>
+                                    <td><strong><?= $e(Html::convDateTime($date)) ?></strong></td>
+                                    <td>
+                                        <?php if ($comp_id > 0 && $can_comp):
+                                            $comp_name = trim(self::fromCore((string) ($t['computer_name'] ?? ''))); ?>
+                                            <a href="<?= $e($CFG_GLPI['root_doc'] . '/front/computer.form.php?id=' . $comp_id) ?>">
+                                                <?= $e($comp_name !== '' ? $comp_name : '#' . $comp_id) ?>
+                                            </a>
+                                            <?php if ($comp_del): ?>
+                                                <span class="text-muted">(na lixeira)</span>
+                                            <?php endif; ?>
+                                        <?php elseif ($comp_id > 0): ?>
+                                            <span class="text-muted">Equipamento de outra entidade</span>
+                                        <?php else: ?>
+                                            <span class="text-muted">Equipamento removido<?= $raw_comp > 0 ? ' (#' . $raw_comp . ')' : '' ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?= $e($tipo_label) ?>
+                                        <?php if ($code !== ''): ?>
+                                            <span class="text-muted">(<?= $e($code) ?>)</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div><i class="ti ti-file-text text-primary"></i> <?= $e($doc_name) ?></div>
+                                        <?php if ($comment !== ''): ?>
+                                            <small class="text-muted"><?= $e($comment) ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= $e($issuer !== '' ? $issuer : '-') ?></td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-outline-primary"
+                                           href="<?= $e($CFG_GLPI['root_doc'] . '/front/document.send.php?docid=' . (int) $t['id']) ?>"
+                                           target="_blank" rel="noopener noreferrer">
+                                            <i class="ti ti-file-type-pdf"></i> Abrir
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php if ($has_more): ?>
+                    <p class="termo-hint mt-2 mb-0">
+                        Mostrando os <?= count($rows) ?> termos mais recentes<?= $busca !== '' ? ' para a busca' : '' ?>. Refine a busca<?= Document::canView() ? ' ou abra a tela de Documentos' : '' ?> para ver registros anteriores.
+                    </p>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
     /** Formulário do termo. $show_pending = false na página do menu, que já lista todos os pendentes. */
     public static function showTermoForm(Computer $computer, bool $show_pending = true)
     {

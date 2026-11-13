@@ -29,7 +29,7 @@ PHP 7.4 ou mais novo (o mínimo do GLPI 10.0; o GLPI 11 já exige PHP 8.2).
 ## Funcionalidades
 
 - **Dois caminhos para o mesmo formulário:**
-  - **Menu Ativos › Termos de Responsabilidade:** escolha o computador e preencha, sem abrir a ficha. A página também lista os termos que **aguardam assinatura** em todos os computadores;
+  - **Menu Ativos › Termos de Responsabilidade:** escolha o computador e preencha, sem abrir a ficha. A página também lista os termos que **aguardam assinatura** em todos os computadores e os **termos arquivados** em PDF (emitidos a partir da v1.5.1, com busca por equipamento, colaborador ou código);
   - **aba "Termo de Responsabilidade"** em cada computador.
 - **Três ações:**
   - **entrega ao colaborador;**
@@ -447,7 +447,7 @@ Validado no GLPI 11.0.10 e no GLPI 10.0.28, com o navegador:
 | Colaborador assina pelo link copiado | PDF arquivado e equipamento atualizado, sem precisar de e-mail ✅ |
 | Somente ciclo de vida | esconde o termo e a assinatura, exige o novo status, muda o status, remove ou mantém o usuário, não gera documento e registra a observação no histórico ✅ |
 | Dados do equipamento | sugestões com valores do GLPI; valores editados vão para o termo sem alterar o cadastro do computador ✅ |
-| Menu Ativos › Termos de Responsabilidade | aparece no menu; escolher o computador abre o formulário; lista os pendentes de todos os computadores ✅ |
+| Menu Ativos › Termos de Responsabilidade | aparece no menu; escolher o computador abre o formulário; lista pendentes e termos arquivados (com busca) ✅ |
 | Usuário do autoatendimento abre a página do menu | acesso negado ✅ |
 | Mover para outra pessoa: usuário do GLPI + nome | vincula o usuário e guarda o nome em Usuário alternativo ✅ |
 | Mover para outra pessoa: só o nome | equipamento sem usuário do GLPI, com o nome; a tela mostra "Nome (sem usuário no GLPI)" ✅ |
