@@ -14,15 +14,29 @@ if (!defined('GLPI_ROOT')) {
     die("Acesso direto não permitido.");
 }
 
-class PluginAssettermsSignature extends CommonGLPI
+interface PluginAssettermsSignatureConstants
 {
-    public static $rightname = 'computer';
-
     public const TABLE = 'glpi_plugin_assetterms_signatures';
+}
 
+trait PluginAssettermsSignatureBody
+{
     public static function getTypeName($nb = 0)
     {
         return 'Minha assinatura';
+    }
+
+    public static function canView(): bool
+    {
+        if (!class_exists('PluginAssettermsTerm')) {
+            include_once __DIR__ . '/term.class.php';
+        }
+        return PluginAssettermsTerm::canUpdateAnyAsset();
+    }
+
+    public static function canUpdate(): bool
+    {
+        return self::canView();
     }
 
     public static function installSchema(): void
@@ -98,5 +112,25 @@ class PluginAssettermsSignature extends CommonGLPI
     public static function pageUrl(): string
     {
         return PluginAssettermsTerm::webPath() . '/front/signature.php';
+    }
+}
+
+if (
+    class_exists('CommonGLPI')
+    && property_exists('CommonGLPI', 'rightname')
+    && (new ReflectionProperty('CommonGLPI', 'rightname'))->hasType()
+) {
+    class PluginAssettermsSignature extends CommonGLPI implements PluginAssettermsSignatureConstants
+    {
+        use PluginAssettermsSignatureBody;
+
+        public static string $rightname = 'computer';
+    }
+} else {
+    class PluginAssettermsSignature extends CommonGLPI implements PluginAssettermsSignatureConstants
+    {
+        use PluginAssettermsSignatureBody;
+
+        public static $rightname = 'computer';
     }
 }

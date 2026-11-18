@@ -1,6 +1,6 @@
 /**
  * ------------------------------------------------------------------------
- * Asset Terms - Estilos da aba do computador
+ * Asset Terms - Estilos da aba do equipamento
  * ------------------------------------------------------------------------
  */
 
@@ -398,13 +398,34 @@
 /* Ativos > Termos de Responsabilidade */
 .termo-picker-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     align-items: center;
 }
 
-.termo-picker-row > :first-child {
-    flex: 1;
+.termo-picker-row .termo-type-select {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 210px;
+}
+
+.termo-picker-row .termo-picker-asset {
+    flex: 1 1 260px;
     min-width: 0;
+}
+
+@media (max-width: 640px) {
+    .termo-picker-row .termo-type-select,
+    .termo-picker-row .termo-picker-asset {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+}
+
+.badge-type {
+    background: var(--tblr-bg-surface-secondary, #f1f5f9);
+    color: var(--tblr-body-color, #334155);
+    border: 1px solid var(--tblr-border-color, #cbd5e1);
 }
 
 .termo-picker-link {

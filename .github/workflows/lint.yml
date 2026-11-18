@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 7.4 = mínimo declarado no setup.php (GLPI 10.0); 8.1 a 8.3 = versões usadas pelo GLPI 10 e 11
+        # 7.4 = mínimo declarado no setup.php (GLPI 10.0); 8.1 a 8.3 = versões usadas pelo GLPI 10, 11 e 12
         php: ['7.4', '8.1', '8.2', '8.3']
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -31,5 +31,8 @@ jobs:
           status=0
           while IFS= read -r -d '' file; do
             php -l "$file" > /dev/null || status=1
-          done < <(find assetterms -name '*.php' -print0)
+          done < <(find assetterms tests -name '*.php' -print0)
           exit $status
+
+      - name: Executar suíte de testes
+        run: php tests/run.php

@@ -16,7 +16,10 @@ if (!defined('GLPI_ROOT')) {
     include __DIR__ . '/../../../inc/includes.php';
 }
 
-Session::checkRight('computer', UPDATE);
+if (!PluginAssettermsTerm::canUpdateAnyAsset()) {
+    Html::displayRightError();
+    return;
+}
 PluginAssettermsTerm::normalizeInput();
 
 $self = PluginAssettermsSignature::pageUrl();

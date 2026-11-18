@@ -14,10 +14,8 @@ if (!defined('GLPI_ROOT')) {
     die("Acesso direto não permitido.");
 }
 
-class PluginAssettermsConfig extends CommonGLPI
+interface PluginAssettermsConfigConstants
 {
-    public static $rightname = 'config';
-
     public const TABLE = 'glpi_plugin_assetterms_configs';
 
     /** Marcadores aceitos no texto */
@@ -33,18 +31,11 @@ class PluginAssettermsConfig extends CommonGLPI
     public const MAX_ITEMS = 50;
     public const MAX_ITEM = 1000;
 
-    public static function getTypeName($nb = 0)
-    {
-        return 'Asset Terms';
-    }
-
-    // ------------------------------------------------------------- Banco
-
     /** Contadores do código sequencial do documento, por empresa (entidade da configuração) e ano */
     public const COUNTERS = 'glpi_plugin_assetterms_counters';
 
     /** Colunas acrescentadas depois da criação da tabela (versão em que entraram) */
-    private const MIGRATIONS = [
+    public const MIGRATIONS = [
         // 1.4.0: código do documento e aparência
         'code_format' => "varchar(100) NOT NULL DEFAULT '{aleatorio}'",
         'code_prefix' => "varchar(20) NOT NULL DEFAULT ''",
@@ -73,6 +64,46 @@ class PluginAssettermsConfig extends CommonGLPI
         'elaborado'       => ['Elaborado e revisado por', 'Nome', 100],
         'aprovado'        => ['Aprovado por', 'Nome', 100],
     ];
+
+    /** Contexto da configuração do plugin em glpi_configs (versão do banco e outros valores internos) */
+    public const CONFIG_CONTEXT = 'plugin:assetterms';
+
+    /**
+     * Versão atual do banco do plugin. Cada passo de migrate() roda uma única vez, em ordem:
+     *   1 = 1.4.0: código do termo com até 100 caracteres
+     *   2 = 1.5.1: tabela dos documentos gerados (histórico sem depender do nome do documento)
+     *   3 = 1.5.3: tabela das assinaturas cadastradas por quem emite os termos (TI)
+     *   4 = 1.6.0: coluna itemtype nas tabelas de solicitações e documentos (suporte multiativos)
+     */
+    public const SCHEMA_VERSION = 4;
+
+    public const DEFAULT_CODE_FORMAT = '{aleatorio}';
+    public const DEFAULT_COLOR = '#1f3a5f';
+
+    /** Marcadores aceitos no formato do código */
+    public const CODE_TAGS = [
+        '{prefixo}'   => 'o prefixo definido ao lado',
+        '{ano}'       => 'ano com 4 dígitos (2026)',
+        '{mes}'       => 'mês (10)',
+        '{dia}'       => 'dia (05)',
+        '{seq}'       => 'número sequencial, com os dígitos definidos ao lado',
+        '{tipo}'      => 'ENT na entrega, DEV na devolução',
+        '{aleatorio}' => 'código aleatório (ex.: 7AE8-6BAC-E7C2)',
+    ];
+
+    /** Lado máximo do logo, em pixels (no PDF ele ocupa até 50 x 16 mm, ~600 x 190 px a 300 dpi) */
+    public const LOGO_MAX_PX = 3000;
+}
+
+trait PluginAssettermsConfigBody
+{
+    /** Último número reservado nesta requisição: [entidade, ano, número] (ver releaseNumber) */
+    private static ?array $reserved = null;
+
+    public static function getTypeName($nb = 0)
+    {
+        return 'Asset Terms';
+    }
 
     public static function defaultDocControl(): array
     {
@@ -119,17 +150,6 @@ class PluginAssettermsConfig extends CommonGLPI
 
     // ------------------------------------------------------------ Migrações
 
-    /** Contexto da configuração do plugin em glpi_configs (versão do banco e outros valores internos) */
-    public const CONFIG_CONTEXT = 'plugin:assetterms';
-
-    /**
-     * Versão atual do banco do plugin. Cada passo de migrate() roda uma única vez, em ordem:
-     *   1 = 1.4.0: código do termo com até 100 caracteres
-     *   2 = 1.5.1: tabela dos documentos gerados (histórico sem depender do nome do documento)
-     *   3 = 1.5.3: tabela das assinaturas cadastradas por quem emite os termos (TI)
-     */
-    public const SCHEMA_VERSION = 3;
-
     private static function schemaVersion(): int
     {
         $values = Config::getConfigurationValues(self::CONFIG_CONTEXT, ['schema_version']);
@@ -137,9 +157,16 @@ class PluginAssettermsConfig extends CommonGLPI
     }
 
     /** Roda os passos de migração que faltam, a partir da versão gravada na configuração */
-    private static function migrate(): void
+    public static function migrate(): void
     {
         global $DB;
+        if (!class_exists('PluginAssettermsTerm')) {
+            include_once __DIR__ . '/term.class.php';
+        }
+        if (!class_exists('PluginAssettermsSignature')) {
+            include_once __DIR__ . '/signature.class.php';
+        }
+
         $version = self::schemaVersion();
 
         if ($version < 1) {
@@ -153,13 +180,39 @@ class PluginAssettermsConfig extends CommonGLPI
             PluginAssettermsTerm::installDocsTable();
             // Documentos gerados antes desta versão não estão na tabela: o histórico os acha pelo nome
             // ("Termo de ..."), mas só até o último documento que existia no momento da atualização
-            $result = $DB->doQuery('SELECT MAX(`id`) AS max_id FROM `glpi_documents`');
-            $max    = $result ? (int) ($result->fetch_assoc()['max_id'] ?? 0) : 0;
+            $expr = class_exists(\Glpi\DBAL\QueryExpression::class)
+                ? new \Glpi\DBAL\QueryExpression('MAX(`id`) AS `max_id`')
+                : new \QueryExpression('MAX(`id`) AS `max_id`');
+            $max = 0;
+            foreach ($DB->request(['SELECT' => [$expr], 'FROM' => 'glpi_documents']) as $row) {
+                $max = (int) ($row['max_id'] ?? 0);
+            }
             Config::setConfigurationValues(self::CONFIG_CONTEXT, ['legacy_max_documents_id' => $max]);
         }
 
         if ($version < 3) {
             PluginAssettermsSignature::installSchema();
+        }
+
+        if ($version < 4) {
+            if ($DB->tableExists(PluginAssettermsTerm::TABLE)) {
+                if (!$DB->fieldExists(PluginAssettermsTerm::TABLE, 'itemtype')) {
+                    $DB->doQuery('ALTER TABLE `' . PluginAssettermsTerm::TABLE . "` ADD `itemtype` varchar(64) NOT NULL DEFAULT 'Computer' AFTER `id`");
+                }
+                if (!self::indexExists(PluginAssettermsTerm::TABLE, 'item')) {
+                    $DB->doQuery('ALTER TABLE `' . PluginAssettermsTerm::TABLE . '` ADD KEY `item` (`itemtype`, `computers_id`)');
+                }
+                $DB->update(PluginAssettermsTerm::TABLE, ['itemtype' => 'Computer'], ['itemtype' => '']);
+            }
+            if ($DB->tableExists(PluginAssettermsTerm::DOCS_TABLE)) {
+                if (!$DB->fieldExists(PluginAssettermsTerm::DOCS_TABLE, 'itemtype')) {
+                    $DB->doQuery('ALTER TABLE `' . PluginAssettermsTerm::DOCS_TABLE . "` ADD `itemtype` varchar(64) NOT NULL DEFAULT 'Computer' AFTER `documents_id`");
+                }
+                if (!self::indexExists(PluginAssettermsTerm::DOCS_TABLE, 'item')) {
+                    $DB->doQuery('ALTER TABLE `' . PluginAssettermsTerm::DOCS_TABLE . '` ADD KEY `item` (`itemtype`, `computers_id`)');
+                }
+                $DB->update(PluginAssettermsTerm::DOCS_TABLE, ['itemtype' => 'Computer'], ['itemtype' => '']);
+            }
         }
 
         if ($version < self::SCHEMA_VERSION) {
@@ -174,6 +227,14 @@ class PluginAssettermsConfig extends CommonGLPI
         $result = $DB->doQuery('SHOW COLUMNS FROM `' . $table . "` LIKE '" . $DB->escape($field) . "'");
         $row = $result ? $result->fetch_assoc() : null;
         return strtolower((string) ($row['Type'] ?? ''));
+    }
+
+    /** Verifica se um índice existe na tabela */
+    private static function indexExists(string $table, string $index): bool
+    {
+        global $DB;
+        $result = $DB->doQuery('SHOW INDEX FROM `' . $table . "` WHERE `Key_name` = '" . $DB->escape($index) . "'");
+        return $result ? ($result->fetch_assoc() !== null) : false;
     }
 
     /** Último documento que pode ser um termo anterior à 1.5.1 (achado pelo nome), ou 0 */
@@ -320,20 +381,6 @@ class PluginAssettermsConfig extends CommonGLPI
 
     // ---------------------------------------------------- Código do documento
 
-    public const DEFAULT_CODE_FORMAT = '{aleatorio}';
-    public const DEFAULT_COLOR = '#1f3a5f';
-
-    /** Marcadores aceitos no formato do código */
-    public const CODE_TAGS = [
-        '{prefixo}'   => 'o prefixo definido ao lado',
-        '{ano}'       => 'ano com 4 dígitos (2026)',
-        '{mes}'       => 'mês (10)',
-        '{dia}'       => 'dia (05)',
-        '{seq}'       => 'número sequencial, com os dígitos definidos ao lado',
-        '{tipo}'      => 'ENT na entrega, DEV na devolução',
-        '{aleatorio}' => 'código aleatório (ex.: 7AE8-6BAC-E7C2)',
-    ];
-
     /** Contador usado pela configuração: o da entidade onde ela está definida, por ano ou contínuo */
     private static function counterKey(array $cfg, int $time): array
     {
@@ -350,9 +397,6 @@ class PluginAssettermsConfig extends CommonGLPI
         }
         return 1;
     }
-
-    /** Último número reservado nesta requisição: [entidade, ano, número] (ver releaseNumber) */
-    private static ?array $reserved = null;
 
     /** Reserva o próximo número (atômico: dois termos ao mesmo tempo nunca recebem o mesmo) */
     public static function nextNumber(array $cfg, int $time): int
@@ -415,7 +459,7 @@ class PluginAssettermsConfig extends CommonGLPI
             '{tipo}'      => $tipo === 'devolucao' ? 'DEV' : 'ENT',
             '{aleatorio}' => implode('-', str_split(strtoupper(bin2hex(random_bytes(6))), 4)),
         ];
-        if (str_contains($format, '{seq}')) {
+        if (strpos($format, '{seq}') !== false) {
             $seq = $consume ? self::nextNumber($cfg, $time) : self::peekNumber($cfg, $time);
             $map['{seq}'] = str_pad((string) $seq, $cfg['code_digits'], '0', STR_PAD_LEFT);
         }
@@ -454,9 +498,6 @@ class PluginAssettermsConfig extends CommonGLPI
         }
         return ['data' => $data, 'mime' => $info['mime']];
     }
-
-    /** Lado máximo do logo, em pixels (no PDF ele ocupa até 50 x 16 mm, ~600 x 190 px a 300 dpi) */
-    public const LOGO_MAX_PX = 3000;
 
     /**
      * Texto de um termo com os marcadores trocados pelos dados da empresa.
@@ -521,7 +562,7 @@ class PluginAssettermsConfig extends CommonGLPI
         if (preg_match_all('/\{[^}]*\}/', $format, $m) && array_diff($m[0], array_keys(self::CODE_TAGS))) {
             return 'Marcador desconhecido no formato do código: ' . implode(', ', array_diff($m[0], array_keys(self::CODE_TAGS))) . '.';
         }
-        if (!str_contains($format, '{seq}') && !str_contains($format, '{aleatorio}')) {
+        if (strpos($format, '{seq}') === false && strpos($format, '{aleatorio}') === false) {
             return 'O formato do código precisa ter {seq} ou {aleatorio}, para cada documento ter um código diferente.';
         }
         $prefix = trim((string) ($post['code_prefix'] ?? ''));
@@ -620,6 +661,26 @@ class PluginAssettermsConfig extends CommonGLPI
     /** Caminho da tela de configuração, relativo à raiz do GLPI */
     public static function pagePath(): string
     {
-        return substr(PluginAssettermsTerm::webPath(), strlen($GLOBALS['CFG_GLPI']['root_doc'])) . '/front/config.php';
+        return substr(PluginAssettermsTerm::webPath(), strlen((string) ($GLOBALS['CFG_GLPI']['root_doc'] ?? ''))) . '/front/config.php';
+    }
+}
+
+if (
+    class_exists('CommonGLPI')
+    && property_exists('CommonGLPI', 'rightname')
+    && (new ReflectionProperty('CommonGLPI', 'rightname'))->hasType()
+) {
+    class PluginAssettermsConfig extends CommonGLPI implements PluginAssettermsConfigConstants
+    {
+        use PluginAssettermsConfigBody;
+
+        public static string $rightname = 'config';
+    }
+} else {
+    class PluginAssettermsConfig extends CommonGLPI implements PluginAssettermsConfigConstants
+    {
+        use PluginAssettermsConfigBody;
+
+        public static $rightname = 'config';
     }
 }

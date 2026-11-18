@@ -5,7 +5,7 @@
  * Asset Terms - Reenviar ou cancelar um termo enviado por e-mail
  *
  * POST (cabeçalho X-Glpi-Csrf-Token): id, acao (reenviar|cancelar)
- * Exige permissão de alterar o computador do termo.
+ * Exige permissão de alterar o equipamento do termo.
  * ------------------------------------------------------------------------
  */
 
@@ -19,6 +19,7 @@ global $DB;
 Session::checkLoginUser();
 $json = [PluginAssettermsTerm::class, 'json'];
 PluginAssettermsTerm::normalizeInput();
+PluginAssettermsTerm::ensureSchema();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     $json(['success' => false, 'message' => 'Método não permitido.'], 405);
@@ -37,12 +38,13 @@ try {
 }
 
 $req      = PluginAssettermsTerm::getRequest((int) ($_POST['id'] ?? 0));
-$computer = new Computer();
-if ($req === null || !$computer->getFromDB((int) $req['computers_id'])) {
+$itemtype = $req !== null ? PluginAssettermsTerm::normalizeItemtype((string) ($req['itemtype'] ?? 'Computer')) : 'Computer';
+$asset    = $req !== null ? PluginAssettermsTerm::loadAsset($itemtype, (int) $req['computers_id']) : null;
+if ($req === null || $asset === null) {
     $json(['success' => false, 'message' => 'Termo não encontrado.'], 404);
     return;
 }
-if (!$computer->can((int) $req['computers_id'], UPDATE)) {
+if (!$asset->can((int) $req['computers_id'], UPDATE)) {
     $json(['success' => false, 'message' => 'Você não tem permissão para alterar este equipamento.'], 403);
     return;
 }
@@ -65,7 +67,7 @@ if (($_POST['acao'] ?? '') === 'cancelar') {
         $json(['success' => false, 'message' => 'Este termo não está mais aguardando assinatura.', 'reload' => true], 409);
         return;
     }
-    PluginAssettermsTerm::history((int) $req['computers_id'], "{$titulo} enviado para {$nome} cancelado. Código: {$req['code']}.");
+    PluginAssettermsTerm::history((int) $req['computers_id'], "{$titulo} enviado para {$nome} cancelado. Código: {$req['code']}.", $itemtype);
     $json(['success' => true, 'reload' => true, 'message' => 'Termo cancelado. O link enviado deixou de funcionar.']);
     return;
 }

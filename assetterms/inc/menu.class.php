@@ -10,10 +10,8 @@ if (!defined('GLPI_ROOT')) {
     die("Acesso direto não permitido.");
 }
 
-class PluginAssettermsMenu extends CommonGLPI
+trait PluginAssettermsMenuBody
 {
-    public static $rightname = 'computer';
-
     public static function getTypeName($nb = 0)
     {
         return 'Termos de Responsabilidade';
@@ -40,7 +38,10 @@ class PluginAssettermsMenu extends CommonGLPI
 
     public static function getMenuContent()
     {
-        if (!Computer::canView()) {
+        if (!class_exists('PluginAssettermsTerm')) {
+            include_once __DIR__ . '/term.class.php';
+        }
+        if (!PluginAssettermsTerm::canViewAnyAsset()) {
             return false;
         }
         return [
@@ -48,5 +49,25 @@ class PluginAssettermsMenu extends CommonGLPI
             'page'  => self::pagePath(),
             'icon'  => self::getIcon(),
         ];
+    }
+}
+
+if (
+    class_exists('CommonGLPI')
+    && property_exists('CommonGLPI', 'rightname')
+    && (new ReflectionProperty('CommonGLPI', 'rightname'))->hasType()
+) {
+    class PluginAssettermsMenu extends CommonGLPI
+    {
+        use PluginAssettermsMenuBody;
+
+        public static string $rightname = 'computer';
+    }
+} else {
+    class PluginAssettermsMenu extends CommonGLPI
+    {
+        use PluginAssettermsMenuBody;
+
+        public static $rightname = 'computer';
     }
 }

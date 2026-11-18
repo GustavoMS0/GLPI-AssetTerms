@@ -38,7 +38,7 @@
     function escapeHtml(s) {
         const d = document.createElement('div');
         d.textContent = s == null ? '' : String(s);
-        return d.innerHTML;
+        return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
     /** Lê a resposta JSON mesmo quando o servidor responde com erro */

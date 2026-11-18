@@ -19,6 +19,7 @@ global $DB;
 Session::checkLoginUser();
 $json = [PluginAssettermsTerm::class, 'json'];
 PluginAssettermsTerm::normalizeInput();
+PluginAssettermsTerm::ensureSchema();
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     $json(['success' => false, 'message' => 'Método não permitido.'], 405);
@@ -56,8 +57,9 @@ if ($assinatura === null || $assinatura === '') {
     return;
 }
 
-$computer = new Computer();
-if (!$computer->getFromDB((int) $req['computers_id']) || !empty($computer->fields['is_deleted'])) {
+$itemtype = PluginAssettermsTerm::normalizeItemtype((string) ($req['itemtype'] ?? 'Computer'));
+$asset    = PluginAssettermsTerm::loadAsset($itemtype, (int) $req['computers_id']);
+if ($asset === null || !empty($asset->fields['is_deleted'])) {
     $json(['success' => false, 'message' => 'O equipamento deste termo não existe mais. Fale com a TI.'], 410);
     return;
 }
@@ -78,6 +80,7 @@ if ($DB->affectedRows() !== 1) {
 $user  = new User();
 $user->getFromDB($me);
 $dados = PluginAssettermsTerm::withDate($req['data'], $agora) + [
+    'itemtype'        => $itemtype,
     'assinatura'      => $assinatura,
     'assinatura_tipo' => ($_POST['signature_kind'] ?? '') === 'digitada' ? 'digitada' : 'desenhada',
     'modo'            => ($req['data']['canal'] ?? '') === 'link' ? 'link' : 'email',
@@ -87,7 +90,7 @@ $dados = PluginAssettermsTerm::withDate($req['data'], $agora) + [
 ];
 
 try {
-    [$doc_id, , $pdf] = PluginAssettermsTerm::archive($computer, $dados, $agora);
+    [$doc_id, , $pdf] = PluginAssettermsTerm::archive($asset, $dados, $agora);
 } catch (Throwable $e) {
     // Libera o pedido para uma nova tentativa. Se o documento chegou a ser criado, archive() já o
     // apagou (com o arquivo e o vínculo), então a nova tentativa não deixa termo duplicado.

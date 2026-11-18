@@ -31,15 +31,15 @@
  * ------------------------------------------------------------------------
  */
 
-define('PLUGIN_ASSETTERMS_VERSION', '1.5.5');
+define('PLUGIN_ASSETTERMS_VERSION', '1.6.0-rc1');
 define('PLUGIN_ASSETTERMS_MIN_GLPI', '10.0.0');
-define('PLUGIN_ASSETTERMS_MAX_GLPI', '11.0.99');
+define('PLUGIN_ASSETTERMS_MAX_GLPI', '12.0.99');
 // Mínimo do GLPI 10.0. str_contains/str_ends_with vêm do symfony/polyfill-php80, que o GLPI 10 já traz
 define('PLUGIN_ASSETTERMS_MIN_PHP', '7.4');
 
 /**
- * Inicialização: registra a aba nos computadores e carrega CSS e JS na tela do computador
- * e na página de assinatura.
+ * Inicialização: registra a aba nos equipamentos suportados e carrega CSS e JS nas fichas
+ * dos ativos e nas páginas do plugin.
  */
 function plugin_init_assetterms()
 {
@@ -48,10 +48,10 @@ function plugin_init_assetterms()
     $PLUGIN_HOOKS['csrf_compliant']['assetterms'] = true;
 
     Plugin::registerClass('PluginAssettermsTerm', [
-        'addtabon' => ['Computer'],
+        'addtabon' => ['Computer', 'Phone', 'Monitor', 'Peripheral'],
     ]);
 
-    // GLPI 11: a página do link do e-mail faz a própria checagem de login (front/sign.php),
+    // GLPI 11+: a página do link do e-mail faz a própria checagem de login (front/sign.php),
     // para levar quem não está logado direto à tela de login e voltar ao termo depois
     if (class_exists(\Glpi\Http\Firewall::class) && method_exists(\Glpi\Http\Firewall::class, 'addPluginStrategyForLegacyScripts')) {
         \Glpi\Http\Firewall::addPluginStrategyForLegacyScripts('assetterms', '#^/front/sign\.php$#', \Glpi\Http\Firewall::STRATEGY_NO_CHECK);
@@ -60,16 +60,25 @@ function plugin_init_assetterms()
     // Configurar > Plugins > Asset Terms: empresa e texto dos termos
     $PLUGIN_HOOKS['config_page']['assetterms'] = 'front/config.php';
 
-    // Ativos > Termos de Responsabilidade (escolha do computador e termos pendentes)
+    // Ativos > Termos de Responsabilidade (escolha do equipamento e termos pendentes)
     $PLUGIN_HOOKS['menu_toadd']['assetterms'] = ['assets' => 'PluginAssettermsMenu'];
 
-    // GLPI 11 serve os arquivos estáticos a partir de public/; o GLPI 10, da raiz do plugin
+    // GLPI 11+ serve os arquivos estáticos a partir de public/; o GLPI 10, da raiz do plugin
     $uri   = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
     $pages = [
-        '/front/computer.form.php', '/assetterms/front/sign.php', '/assetterms/front/term.php',
-        '/assetterms/front/config.php', '/assetterms/front/signature.php',
+        '/front/computer.form.php',
+        '/front/phone.form.php',
+        '/front/monitor.form.php',
+        '/front/peripheral.form.php',
+        '/assetterms/front/sign.php',
+        '/assetterms/front/term.php',
+        '/assetterms/front/config.php',
+        '/assetterms/front/signature.php',
     ];
-    if (array_filter($pages, static fn ($p) => str_ends_with($uri, $p))) {
+    $matches = array_filter($pages, static function (string $p) use ($uri): bool {
+        return strlen($uri) >= strlen($p) && substr($uri, -strlen($p)) === $p;
+    });
+    if ($matches) {
         $prefix = version_compare(GLPI_VERSION, '11.0.0-dev', '>=') ? '' : 'public/';
         $PLUGIN_HOOKS['add_javascript']['assetterms'] = [$prefix . 'js/assetterms.js'];
         $PLUGIN_HOOKS['add_css']['assetterms']        = [$prefix . 'css/assetterms.css'];

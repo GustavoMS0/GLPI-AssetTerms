@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0-rc1] - 2026-11-18
+
+### Adicionado
+
+- **Suporte multiativos (Computador, Telefone / Smartphone, Monitor e Periférico / Dispositivo)** (@karenMoraes2021, #5):
+  - aba **Termo de Responsabilidade** registrada em `Computer`, `Phone`, `Monitor` e `Peripheral`, com carregamento de CSS/JS nas respectivas fichas;
+  - seletor de **Tipo de equipamento** em **Ativos › Termos de Responsabilidade** filtrando apenas os tipos que o perfil pode visualizar;
+  - checklist com acessórios adicionais (`capa`, `chip`, `hdmi`) e marcação padrão por tipo de ativo;
+  - registro da **Categoria** na seção de equipamento do PDF e ocultação automática da linha **Configuração** quando não aplicável/vazia em ativos não-computador;
+  - fallback de `brand` para fabricante em telefones e periféricos quando `manufacturers_id` não está preenchido;
+  - listagens de **Aguardando assinatura** e **Termos arquivados** unificadas para todos os tipos suportados com badge da categoria e links corretos para cada ficha.
+
+### Segurança e Banco de Dados
+
+- **Migração de esquema v3 para v4**: adiciona a coluna `itemtype` (padrão `'Computer'`) e o índice composto `(itemtype, computers_id)` em `glpi_plugin_assetterms_requests` e `glpi_plugin_assetterms_documents`, com preenchimento automático de registros legados e guarda idempotente `ensureSchema()`.
+- **Isolamento estrito por `(itemtype, id)` e permissões**: cancelamento de pendentes, histórico (`Log::history`), vínculos (`Document_Item`), verificação de acesso por tipo (`$assetClass::canView()` / `canUpdate()`) e restrição de termos arquivados sem `Document::canView()` respeitam rigorosamente o tipo de ativo e a entidade ativa.
+- **Compatibilidade GLPI 10, 11 e 12 (PHP 7.4+)**: declaração condicional de `CommonGLPI::$rightname` via `ReflectionProperty` para compatibilidade simultânea com GLPI 10/11 e GLPI 12+.
+
 ## [1.5.5] - 2026-11-13
 
 ### Adicionado

@@ -71,6 +71,7 @@ if ($logo !== null) {
 $tipo  = ($_POST['preview_tipo'] ?? '') === 'devolucao' ? 'devolucao' : 'entrega';
 $dados = PluginAssettermsTerm::withDate(PluginAssettermsTerm::techData((int) Session::getLoginUserID()) + [
     'tipo'         => $tipo,
+    'itemtype'     => 'Computer',
     'entities_id'  => $eid,
     'empresa'      => $cfg['company_name'],
     'cnpj'         => $cfg['company_doc'],

@@ -2,7 +2,7 @@
 
 /**
  * ------------------------------------------------------------------------
- * Asset Terms - Aba do computador, texto do termo e PDF
+ * Asset Terms - Aba do equipamento, texto do termo e PDF
  * ------------------------------------------------------------------------
  */
 
@@ -10,15 +10,82 @@ if (!defined('GLPI_ROOT')) {
     die("Acesso direto não permitido.");
 }
 
-class PluginAssettermsTerm extends CommonGLPI
+interface PluginAssettermsTermConstants
 {
-    public static $rightname = 'computer';
+    /**
+     * Tipos de ativos suportados pelo plugin (chave = classe CommonDBTM do GLPI).
+     */
+    public const ASSET_TYPES = [
+        'Computer' => [
+            'label'        => 'Computador',
+            'rightname'    => 'computer',
+            'table'        => 'glpi_computers',
+            'model_field'  => 'computermodels_id',
+            'model_table'  => 'glpi_computermodels',
+            'type_field'   => 'computertypes_id',
+            'type_table'   => 'glpi_computertypes',
+            'brand_field'  => '',
+            'state_col'    => 'is_visible_computer',
+            'form_page'    => '/front/computer.form.php',
+            'has_hw_specs' => true,
+            'has_os_spec'  => true,
+            'icon'         => 'ti ti-device-laptop',
+        ],
+        'Phone' => [
+            'label'        => 'Telefone / Smartphone',
+            'rightname'    => 'phone',
+            'table'        => 'glpi_phones',
+            'model_field'  => 'phonemodels_id',
+            'model_table'  => 'glpi_phonemodels',
+            'type_field'   => 'phonetypes_id',
+            'type_table'   => 'glpi_phonetypes',
+            'brand_field'  => 'brand',
+            'state_col'    => 'is_visible_phone',
+            'form_page'    => '/front/phone.form.php',
+            'has_hw_specs' => false,
+            'has_os_spec'  => true,
+            'icon'         => 'ti ti-device-mobile',
+        ],
+        'Monitor' => [
+            'label'        => 'Monitor',
+            'rightname'    => 'monitor',
+            'table'        => 'glpi_monitors',
+            'model_field'  => 'monitormodels_id',
+            'model_table'  => 'glpi_monitormodels',
+            'type_field'   => 'monitortypes_id',
+            'type_table'   => 'glpi_monitortypes',
+            'brand_field'  => '',
+            'state_col'    => 'is_visible_monitor',
+            'form_page'    => '/front/monitor.form.php',
+            'has_hw_specs' => false,
+            'has_os_spec'  => false,
+            'icon'         => 'ti ti-device-desktop',
+        ],
+        'Peripheral' => [
+            'label'        => 'Periférico / Dispositivo',
+            'rightname'    => 'peripheral',
+            'table'        => 'glpi_peripherals',
+            'model_field'  => 'peripheralmodels_id',
+            'model_table'  => 'glpi_peripheralmodels',
+            'type_field'   => 'peripheraltypes_id',
+            'type_table'   => 'glpi_peripheraltypes',
+            'brand_field'  => 'brand',
+            'state_col'    => 'is_visible_peripheral',
+            'form_page'    => '/front/peripheral.form.php',
+            'has_hw_specs' => false,
+            'has_os_spec'  => false,
+            'icon'         => 'ti ti-devices-pc',
+        ],
+    ];
 
     /** Acessórios do checklist: chave enviada pelo formulário => texto do termo */
     public const CHECKLIST = [
         'fonte'    => 'Fonte / carregador original',
         'cabo'     => 'Cabo de força',
+        'hdmi'     => 'Cabo de vídeo (HDMI / DisplayPort)',
         'mochila'  => 'Mochila ou case de transporte',
+        'capa'     => 'Capa protetora / película',
+        'chip'     => 'Chip SIM corporativo',
         'mouse'    => 'Mouse',
         'teclado'  => 'Teclado',
         'hub'      => 'Adaptador de vídeo / hub USB-C',
@@ -26,12 +93,165 @@ class PluginAssettermsTerm extends CommonGLPI
         'trava'    => 'Trava de segurança',
     ];
 
-    /** Acessórios marcados por padrão na entrega */
+    /** Acessórios marcados por padrão na entrega de computadores */
     public const CHECKLIST_DEFAULT = ['fonte', 'cabo'];
+
+    /** Pedidos de assinatura enviados por e-mail */
+    public const TABLE = 'glpi_plugin_assetterms_requests';
+    public const PENDING  = 0;
+    public const SIGNED   = 1;
+    public const CANCELED = 2;
+
+    /**
+     * Dimensões máximas (pixels) da imagem da assinatura. O quadro tem até ~1050 x 180 px na tela,
+     * multiplicados pela densidade do monitor (devicePixelRatio, até 3 em celulares e telas 4K).
+     */
+    public const SIGNATURE_MAX_W = 4000;
+    public const SIGNATURE_MAX_H = 1500;
+
+    /** Documentos gerados pelo plugin (histórico de termos da aba) */
+    public const DOCS_TABLE = 'glpi_plugin_assetterms_documents';
+
+    /** Campos do equipamento que o técnico pode conferir ou completar no termo */
+    public const EQUIP_FIELDS = [
+        'fabricante' => 'Fabricante',
+        'modelo'     => 'Modelo',
+        'tipo'       => 'Tipo',
+        'cpu'        => 'Processador',
+        'ram'        => 'Memória',
+        'disk'       => 'Disco',
+        'so'         => 'Sistema operacional',
+    ];
+}
+
+trait PluginAssettermsTermBody
+{
+    private static bool $schemaChecked = false;
+
+    public static function resetSchemaCheck(): void
+    {
+        self::$schemaChecked = false;
+    }
+
+    /** Normaliza o itemtype para um dos tipos suportados (lista branca estrita; padrão: Computer) */
+    public static function normalizeItemtype(?string $raw): string
+    {
+        $raw = trim((string) $raw);
+        return isset(self::ASSET_TYPES[$raw]) ? $raw : 'Computer';
+    }
+
+    /** Verifica se o item pertence a um dos tipos de ativos suportados */
+    public static function isSupportedItem($item): bool
+    {
+        return $item instanceof CommonDBTM && isset(self::ASSET_TYPES[$item->getType()]);
+    }
+
+    /** Carrega o ativo pelo tipo e ID, ou retorna null se inválido/inexistente */
+    public static function loadAsset(string $itemtype, int $id): ?CommonDBTM
+    {
+        $itemtype = self::normalizeItemtype($itemtype);
+        if ($id <= 0 || !class_exists($itemtype)) {
+            return null;
+        }
+        $asset = new $itemtype();
+        if (!($asset instanceof CommonDBTM) || !$asset->getFromDB($id)) {
+            return null;
+        }
+        return $asset;
+    }
+
+    /** Usuário logado pode visualizar ao menos um dos tipos de ativos suportados? */
+    public static function canViewAnyAsset(): bool
+    {
+        foreach (array_keys(self::ASSET_TYPES) as $class) {
+            if (class_exists($class) && $class::canView()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Usuário logado pode alterar ao menos um dos tipos de ativos suportados? */
+    public static function canUpdateAnyAsset(): bool
+    {
+        foreach (array_keys(self::ASSET_TYPES) as $class) {
+            if (class_exists($class) && $class::canUpdate()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Lista de tipos de ativos suportados que o usuário logado pode visualizar (itemtype => metadados) */
+    public static function viewableAssetTypes(): array
+    {
+        $out = [];
+        foreach (self::ASSET_TYPES as $class => $meta) {
+            if (class_exists($class) && $class::canView()) {
+                $out[$class] = $meta;
+            }
+        }
+        return $out;
+    }
+
+    /** URL da ficha do ativo no GLPI */
+    public static function assetFormUrl(string $itemtype, int $id, bool $absolute = false): string
+    {
+        global $CFG_GLPI;
+        $itemtype = self::normalizeItemtype($itemtype);
+        $base = rtrim((string) ($absolute ? ($CFG_GLPI['url_base'] ?? '') : ($CFG_GLPI['root_doc'] ?? '')), '/');
+        return $base . self::ASSET_TYPES[$itemtype]['form_page'] . '?id=' . $id;
+    }
+
+    /** Rótulo amigável da categoria do ativo */
+    public static function assetLabel(string $itemtype): string
+    {
+        $itemtype = self::normalizeItemtype($itemtype);
+        return self::ASSET_TYPES[$itemtype]['label'];
+    }
+
+    /** Acessórios marcados por padrão na entrega para cada tipo de ativo */
+    public static function checklistDefaultsFor(string $itemtype): array
+    {
+        $itemtype = self::normalizeItemtype($itemtype);
+        $defaults = [
+            'Computer'   => ['fonte', 'cabo'],
+            'Phone'      => ['fonte'],
+            'Monitor'    => ['cabo'],
+            'Peripheral' => [],
+        ];
+        return $defaults[$itemtype] ?? [];
+    }
+
+    /**
+     * Garante de forma idempotente (uma vez por requisição) que as tabelas do plugin e a coluna
+     * itemtype existem mesmo se os arquivos forem atualizados sem rodar plugin:install.
+     */
+    public static function ensureSchema(): void
+    {
+        global $DB;
+        if (self::$schemaChecked) {
+            return;
+        }
+        self::$schemaChecked = true;
+
+        if (!$DB->tableExists(self::TABLE) || !$DB->tableExists(self::DOCS_TABLE)) {
+            self::installSchema();
+        }
+        if (
+            ($DB->tableExists(self::TABLE) && !$DB->fieldExists(self::TABLE, 'itemtype'))
+            || ($DB->tableExists(self::DOCS_TABLE) && !$DB->fieldExists(self::DOCS_TABLE, 'itemtype'))
+        ) {
+            if (!class_exists('PluginAssettermsConfig')) {
+                include_once __DIR__ . '/config.class.php';
+            }
+            PluginAssettermsConfig::migrate();
+        }
+    }
 
     public function getTabNameForItem(CommonGLPI $item, $withtemplate = 0)
     {
-        if ($item instanceof Computer && !$withtemplate && Computer::canView()) {
+        if (self::isSupportedItem($item) && !$withtemplate && $item::canView()) {
             return __('Termo de Responsabilidade', 'assetterms');
         }
         return '';
@@ -39,7 +259,7 @@ class PluginAssettermsTerm extends CommonGLPI
 
     public static function displayTabContentForItem(CommonGLPI $item, $tabnum = 1, $withtemplate = 0)
     {
-        if ($item instanceof Computer) {
+        if (self::isSupportedItem($item) && $item::canView()) {
             self::showTermoForm($item);
         }
         return true;
@@ -72,15 +292,15 @@ class PluginAssettermsTerm extends CommonGLPI
 
     /**
      * Quem está com o equipamento: o usuário do GLPI ou, sem usuário, o nome informado
-     * no campo "Usuário alternativo" do computador.
+     * no campo "Usuário alternativo" do equipamento.
      */
-    public static function holderName(Computer $computer): string
+    public static function holderName(CommonDBTM $item): string
     {
-        $user = self::userName((int) ($computer->fields['users_id'] ?? 0));
+        $user = self::userName((int) ($item->fields['users_id'] ?? 0));
         if ($user !== '') {
             return $user;
         }
-        $contact = trim(self::fromCore((string) ($computer->fields['contact'] ?? '')));
+        $contact = trim(self::fromCore((string) ($item->fields['contact'] ?? '')));
         return $contact !== '' ? $contact . ' (sem usuário no GLPI)' : 'Nenhum colaborador vinculado';
     }
 
@@ -98,85 +318,107 @@ class PluginAssettermsTerm extends CommonGLPI
         ];
     }
 
-    /** Especificações do computador conforme o inventário */
-    public static function getComputerSpecs(Computer $computer): array
+    /** Especificações do equipamento conforme o inventário */
+    public static function getItemSpecs(CommonDBTM $item): array
     {
         global $DB;
-        $id = (int) $computer->getID();
+        $itemtype = self::normalizeItemtype($item->getType());
+        $meta     = self::ASSET_TYPES[$itemtype];
+        $id       = (int) $item->getID();
 
-        $cpu = '';
-        foreach (
-            $DB->request([
-                'SELECT'     => ['dev.designation'],
-                'FROM'       => 'glpi_items_deviceprocessors AS item',
-                'INNER JOIN' => ['glpi_deviceprocessors AS dev' => ['ON' => ['item' => 'deviceprocessors_id', 'dev' => 'id']]],
-                'WHERE'      => ['item.items_id' => $id, 'item.itemtype' => 'Computer', 'item.is_deleted' => 0],
-                'LIMIT'      => 1,
-            ]) as $row
-        ) {
-            $cpu = (string) $row['designation'];
-        }
-
-        $ram_mb = 0;
-        foreach (
-            $DB->request([
-                'SELECT' => ['size'],
-                'FROM'   => 'glpi_items_devicememories',
-                'WHERE'  => ['items_id' => $id, 'itemtype' => 'Computer', 'is_deleted' => 0],
-            ]) as $row
-        ) {
-            $ram_mb += (int) ($row['size'] ?? 0);
-        }
-
+        $cpu     = '';
+        $ram_mb  = 0;
         $disk_mb = 0;
-        foreach (
-            $DB->request([
-                'SELECT' => ['capacity'],
-                'FROM'   => 'glpi_items_deviceharddrives',
-                'WHERE'  => ['items_id' => $id, 'itemtype' => 'Computer', 'is_deleted' => 0],
-            ]) as $row
-        ) {
-            $disk_mb += (int) ($row['capacity'] ?? 0);
+        if (!empty($meta['has_hw_specs'])) {
+            foreach (
+                $DB->request([
+                    'SELECT'     => ['dev.designation'],
+                    'FROM'       => 'glpi_items_deviceprocessors AS item',
+                    'INNER JOIN' => ['glpi_deviceprocessors AS dev' => ['ON' => ['item' => 'deviceprocessors_id', 'dev' => 'id']]],
+                    'WHERE'      => ['item.items_id' => $id, 'item.itemtype' => $itemtype, 'item.is_deleted' => 0],
+                    'LIMIT'      => 1,
+                ]) as $row
+            ) {
+                $cpu = (string) $row['designation'];
+            }
+
+            foreach (
+                $DB->request([
+                    'SELECT' => ['size'],
+                    'FROM'   => 'glpi_items_devicememories',
+                    'WHERE'  => ['items_id' => $id, 'itemtype' => $itemtype, 'is_deleted' => 0],
+                ]) as $row
+            ) {
+                $ram_mb += (int) ($row['size'] ?? 0);
+            }
+
+            foreach (
+                $DB->request([
+                    'SELECT' => ['capacity'],
+                    'FROM'   => 'glpi_items_deviceharddrives',
+                    'WHERE'  => ['items_id' => $id, 'itemtype' => $itemtype, 'is_deleted' => 0],
+                ]) as $row
+            ) {
+                $disk_mb += (int) ($row['capacity'] ?? 0);
+            }
         }
 
         $so = '';
-        foreach (
-            $DB->request([
-                'SELECT'    => ['os.name AS os_name', 'ver.name AS ver_name'],
-                'FROM'      => 'glpi_items_operatingsystems AS item',
-                'LEFT JOIN' => [
-                    'glpi_operatingsystems AS os'         => ['ON' => ['item' => 'operatingsystems_id', 'os' => 'id']],
-                    'glpi_operatingsystemversions AS ver' => ['ON' => ['item' => 'operatingsystemversions_id', 'ver' => 'id']],
-                ],
-                'WHERE'     => ['item.items_id' => $id, 'item.itemtype' => 'Computer'],
-                'LIMIT'     => 1,
-            ]) as $row
-        ) {
-            $so = trim(($row['os_name'] ?? '') . ' ' . ($row['ver_name'] ?? ''));
+        if (!empty($meta['has_os_spec'])) {
+            foreach (
+                $DB->request([
+                    'SELECT'    => ['os.name AS os_name', 'ver.name AS ver_name'],
+                    'FROM'      => 'glpi_items_operatingsystems AS item',
+                    'LEFT JOIN' => [
+                        'glpi_operatingsystems AS os'         => ['ON' => ['item' => 'operatingsystems_id', 'os' => 'id']],
+                        'glpi_operatingsystemversions AS ver' => ['ON' => ['item' => 'operatingsystemversions_id', 'ver' => 'id']],
+                    ],
+                    'WHERE'     => ['item.items_id' => $id, 'item.itemtype' => $itemtype],
+                    'LIMIT'     => 1,
+                ]) as $row
+            ) {
+                $so = trim(($row['os_name'] ?? '') . ' ' . ($row['ver_name'] ?? ''));
+            }
         }
 
-        $dropdown = static fn (string $table, string $field): string
-            => (int) ($computer->fields[$field] ?? 0) > 0 ? self::fromCore((string) Dropdown::getDropdownName($table, (int) $computer->fields[$field])) : '';
+        $dropdown = static function (string $table, string $field) use ($item): string {
+            $fid = (int) ($item->fields[$field] ?? 0);
+            return $fid > 0 ? self::fromCore((string) Dropdown::getDropdownName($table, $fid)) : '';
+        };
 
+        $fabricante = $dropdown('glpi_manufacturers', 'manufacturers_id');
+        if ($fabricante === '' && $meta['brand_field'] !== '') {
+            $fabricante = trim(self::fromCore((string) ($item->fields[$meta['brand_field']] ?? '')));
+        }
 
         return [
             'cpu'        => $cpu,
             'ram'        => $ram_mb > 0 ? self::formatMemory($ram_mb) : '',
             'disk'       => $disk_mb > 0 ? self::formatDisk($disk_mb) : '',
             'so'         => $so,
-            'fabricante' => $dropdown('glpi_manufacturers', 'manufacturers_id'),
-            'modelo'     => $dropdown('glpi_computermodels', 'computermodels_id'),
-            'tipo'       => $dropdown('glpi_computertypes', 'computertypes_id'),
+            'fabricante' => $fabricante,
+            'modelo'     => $dropdown($meta['model_table'], $meta['model_field']),
+            'tipo'       => $dropdown($meta['type_table'], $meta['type_field']),
         ];
     }
 
     /**
-     * Status disponíveis para computadores (id => nome).
-     * GLPI 11 guarda a visibilidade em glpi_dropdownvisibilities; o GLPI 10, em glpi_states.is_visible_computer.
+     * @deprecated Use getItemSpecs()
      */
-    public static function getStates(): array
+    public static function getComputerSpecs(CommonDBTM $computer): array
+    {
+        return self::getItemSpecs($computer);
+    }
+
+    /**
+     * Status disponíveis para o tipo de ativo informado (id => nome).
+     * GLPI 11+ guarda a visibilidade em glpi_dropdownvisibilities; o GLPI 10, em glpi_states.is_visible_<tipo>.
+     */
+    public static function getStates(string $itemtype = 'Computer'): array
     {
         global $DB;
+        $itemtype = self::normalizeItemtype($itemtype);
+        $stateCol = self::ASSET_TYPES[$itemtype]['state_col'];
         $criteria = ['SELECT' => ['glpi_states.id', 'glpi_states.completename'], 'FROM' => 'glpi_states', 'ORDER' => 'glpi_states.completename'];
         if ($DB->tableExists('glpi_dropdownvisibilities')) {
             $criteria['INNER JOIN'] = [
@@ -184,9 +426,9 @@ class PluginAssettermsTerm extends CommonGLPI
                     'ON' => ['vis' => 'items_id', 'glpi_states' => 'id', ['AND' => ['vis.itemtype' => 'State']]],
                 ],
             ];
-            $criteria['WHERE'] = ['vis.visible_itemtype' => 'Computer', 'vis.is_visible' => 1];
-        } elseif ($DB->fieldExists('glpi_states', 'is_visible_computer')) {
-            $criteria['WHERE'] = ['is_visible_computer' => 1];
+            $criteria['WHERE'] = ['vis.visible_itemtype' => $itemtype, 'vis.is_visible' => 1];
+        } elseif ($DB->fieldExists('glpi_states', $stateCol)) {
+            $criteria['WHERE'] = [$stateCol => 1];
         }
         $states = [];
         foreach ($DB->request($criteria) as $row) {
@@ -208,12 +450,6 @@ class PluginAssettermsTerm extends CommonGLPI
 
     // ------------------------------------------------- Pedidos de assinatura
 
-    /** Pedidos de assinatura enviados por e-mail */
-    public const TABLE = 'glpi_plugin_assetterms_requests';
-    public const PENDING  = 0;
-    public const SIGNED   = 1;
-    public const CANCELED = 2;
-
     public static function installSchema(): void
     {
         global $DB;
@@ -223,6 +459,7 @@ class PluginAssettermsTerm extends CommonGLPI
         }
         $DB->doQuery("CREATE TABLE `" . self::TABLE . "` (
             `id` int unsigned NOT NULL AUTO_INCREMENT,
+            `itemtype` varchar(64) NOT NULL DEFAULT 'Computer',
             `computers_id` int unsigned NOT NULL DEFAULT '0',
             `entities_id` int unsigned NOT NULL DEFAULT '0',
             `users_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'colaborador que assina',
@@ -238,6 +475,7 @@ class PluginAssettermsTerm extends CommonGLPI
             `date_creation` timestamp NULL DEFAULT NULL,
             `date_mod` timestamp NULL DEFAULT NULL,
             PRIMARY KEY (`id`),
+            KEY `item` (`itemtype`, `computers_id`),
             KEY `computers_id` (`computers_id`),
             KEY `users_id` (`users_id`),
             KEY `status` (`status`)
@@ -254,12 +492,14 @@ class PluginAssettermsTerm extends CommonGLPI
         $DB->doQuery("CREATE TABLE `" . self::DOCS_TABLE . "` (
             `id` int unsigned NOT NULL AUTO_INCREMENT,
             `documents_id` int unsigned NOT NULL DEFAULT '0',
+            `itemtype` varchar(64) NOT NULL DEFAULT 'Computer',
             `computers_id` int unsigned NOT NULL DEFAULT '0',
             `type` varchar(20) NOT NULL DEFAULT 'entrega',
             `code` varchar(100) NOT NULL DEFAULT '',
             `date_creation` timestamp NULL DEFAULT NULL,
             PRIMARY KEY (`id`),
             UNIQUE KEY `documents_id` (`documents_id`),
+            KEY `item` (`itemtype`, `computers_id`),
             KEY `computers_id` (`computers_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC");
     }
@@ -308,29 +548,40 @@ class PluginAssettermsTerm extends CommonGLPI
         return $values;
     }
 
-    /** Mensagem simples no histórico do computador */
-    public static function history(int $computers_id, string $msg): void
+    /** Mensagem simples no histórico do equipamento */
+    public static function history(int $items_id, string $msg, string $itemtype = 'Computer'): void
     {
-        Log::history($computers_id, 'Computer', [0, '', self::coreInput($msg)], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
+        $itemtype = self::normalizeItemtype($itemtype);
+        Log::history($items_id, $itemtype, [0, '', self::coreInput($msg)], '', Log::HISTORY_LOG_SIMPLE_MESSAGE);
     }
 
     /**
-     * Cancela os termos do computador que ainda aguardam assinatura: depois de outro termo ou de
+     * Cancela os termos do equipamento que ainda aguardam assinatura: depois de outro termo ou de
      * uma mudança de ciclo de vida, uma assinatura atrasada devolveria o equipamento à situação antiga.
      */
-    public static function cancelPending(int $computers_id, int $except_id = 0): void
+    public static function cancelPending(int $items_id, int $except_id = 0, string $itemtype = 'Computer'): void
     {
         global $DB;
-        $where = ['computers_id' => $computers_id, 'status' => self::PENDING];
+        self::ensureSchema();
+        $itemtype = self::normalizeItemtype($itemtype);
+        $where = [
+            'itemtype'     => $itemtype,
+            'computers_id' => $items_id,
+            'status'       => self::PENDING,
+        ];
         if ($except_id > 0) {
             $where['NOT'] = ['id' => $except_id];
         }
         $DB->update(self::TABLE, ['status' => self::CANCELED, 'date_mod' => date('Y-m-d H:i:s')], $where);
         $n = (int) $DB->affectedRows();
         if ($n > 0) {
-            self::history($computers_id, $n === 1
-                ? 'Termo que aguardava assinatura cancelado: a situação do equipamento mudou. O link enviado deixou de funcionar.'
-                : "{$n} termos que aguardavam assinatura cancelados: a situação do equipamento mudou. Os links enviados deixaram de funcionar.");
+            self::history(
+                $items_id,
+                $n === 1
+                    ? 'Termo que aguardava assinatura cancelado: a situação do equipamento mudou. O link enviado deixou de funcionar.'
+                    : "{$n} termos que aguardavam assinatura cancelados: a situação do equipamento mudou. Os links enviados deixaram de funcionar.",
+                $itemtype
+            );
         }
     }
 
@@ -373,29 +624,34 @@ class PluginAssettermsTerm extends CommonGLPI
     public static function getRequest(int $id): ?array
     {
         global $DB;
+        self::ensureSchema();
         if ($id <= 0) {
             return null;
         }
         foreach ($DB->request(['FROM' => self::TABLE, 'WHERE' => ['id' => $id]]) as $row) {
-            $row['data'] = json_decode((string) $row['data'], true) ?: [];
+            $row['itemtype'] = self::normalizeItemtype((string) ($row['itemtype'] ?? 'Computer'));
+            $row['data']     = json_decode((string) $row['data'], true) ?: [];
             return $row;
         }
         return null;
     }
 
-    /** Pedidos aguardando assinatura de um computador */
-    public static function getPendingRequests(int $computers_id): array
+    /** Pedidos aguardando assinatura de um equipamento */
+    public static function getPendingRequests(int $items_id, string $itemtype = 'Computer'): array
     {
         global $DB;
+        self::ensureSchema();
+        $itemtype = self::normalizeItemtype($itemtype);
         $rows = [];
         foreach (
             $DB->request([
                 'FROM'  => self::TABLE,
-                'WHERE' => ['computers_id' => $computers_id, 'status' => self::PENDING],
+                'WHERE' => ['itemtype' => $itemtype, 'computers_id' => $items_id, 'status' => self::PENDING],
                 'ORDER' => 'date_send DESC',
             ]) as $row
         ) {
-            $row['data'] = json_decode((string) $row['data'], true) ?: [];
+            $row['itemtype'] = self::normalizeItemtype((string) ($row['itemtype'] ?? $itemtype));
+            $row['data']     = json_decode((string) $row['data'], true) ?: [];
             $rows[] = $row;
         }
         return $rows;
@@ -408,14 +664,15 @@ class PluginAssettermsTerm extends CommonGLPI
      *
      * @return array|string
      */
-    public static function collectInput(array $post, Computer $computer)
+    public static function collectInput(array $post, CommonDBTM $item)
     {
+        $itemtype = self::normalizeItemtype($item->getType());
         $tipo = ($post['tipo_termo'] ?? '') === 'devolucao' ? 'devolucao' : 'entrega';
         $uid  = (int) ($post['users_id'] ?? 0);
         if (self::userName($uid) === '') {
             return 'Selecione o colaborador.';
         }
-        if (!self::userAllowedFor($uid, $computer)) {
+        if (!self::userAllowedFor($uid, $item)) {
             return 'O colaborador escolhido não está ativo ou não tem acesso à entidade deste equipamento.';
         }
         $checklist = [];
@@ -425,7 +682,7 @@ class PluginAssettermsTerm extends CommonGLPI
             }
         }
         $state_id = (int) ($post['target_state_id'] ?? 0);
-        if ($state_id > 0 && !isset(self::getStates()[$state_id])) {
+        if ($state_id > 0 && !isset(self::getStates($itemtype)[$state_id])) {
             $state_id = 0;
         }
         // Dados do equipamento conferidos ou completados pelo técnico (só valem para o termo)
@@ -452,13 +709,13 @@ class PluginAssettermsTerm extends CommonGLPI
      * validade e com algum perfil na entidade do equipamento ou, recursivo, numa entidade acima.
      * O usuário que já está no equipamento sempre vale (ex.: devolução de quem já foi desativado).
      */
-    public static function userAllowedFor(int $users_id, Computer $computer): bool
+    public static function userAllowedFor(int $users_id, CommonDBTM $item): bool
     {
         global $DB;
         if ($users_id <= 0) {
             return false;
         }
-        if ($users_id === (int) ($computer->fields['users_id'] ?? 0)) {
+        if ($users_id === (int) ($item->fields['users_id'] ?? 0)) {
             return true;
         }
         $user = new User();
@@ -472,7 +729,7 @@ class PluginAssettermsTerm extends CommonGLPI
         ) {
             return false;
         }
-        $entities_id = (int) ($computer->fields['entities_id'] ?? 0);
+        $entities_id = (int) ($item->fields['entities_id'] ?? 0);
         $criteria = [
             'COUNT' => 'cpt',
             'FROM'  => 'glpi_profiles_users',
@@ -488,14 +745,18 @@ class PluginAssettermsTerm extends CommonGLPI
      * Dados do termo (sem assinatura). Também é o que fica guardado no pedido enviado por e-mail,
      * para o colaborador assinar exatamente o que a TI registrou.
      */
-    public static function buildData(Computer $computer, array $in, int $tech_id): array
+    public static function buildData(CommonDBTM $item, array $in, int $tech_id): array
     {
-        $cfg = PluginAssettermsConfig::getEffective((int) $computer->fields['entities_id']);
+        $itemtype = self::normalizeItemtype($item->getType());
+        $id       = (int) $item->getID();
+        $cfg      = PluginAssettermsConfig::getEffective((int) $item->fields['entities_id']);
 
         return self::techData($tech_id) + [
             'tipo'         => $in['tipo'],
-            'computers_id' => (int) $computer->getID(),
-            'entities_id'  => (int) $computer->fields['entities_id'],
+            'itemtype'     => $itemtype,
+            'items_id'     => $id,
+            'computers_id' => $id,
+            'entities_id'  => (int) $item->fields['entities_id'],
             'empresa'      => $cfg['company_name'],
             'cnpj'         => $cfg['company_doc'],
             'cidade'       => $cfg['city'],
@@ -504,10 +765,10 @@ class PluginAssettermsTerm extends CommonGLPI
             // Formato definido na configuração (padrão: aleatório); {seq} reserva o próximo número
             'codigo'       => PluginAssettermsConfig::buildCode($cfg, $in['tipo'], time()),
             'colaborador'  => self::userData($in['users_id']) + ['id' => $in['users_id']],
-            'equipamento'  => array_merge(self::getComputerSpecs($computer), $in['equipamento'] ?? []) + [
-                'nome'       => self::fromCore((string) ($computer->fields['name'] ?? '')),
-                'serial'     => (string) ($computer->fields['serial'] ?? ''),
-                'patrimonio' => (string) ($computer->fields['otherserial'] ?? ''),
+            'equipamento'  => array_merge(self::getItemSpecs($item), $in['equipamento'] ?? []) + [
+                'nome'       => self::fromCore((string) ($item->fields['name'] ?? '')),
+                'serial'     => (string) ($item->fields['serial'] ?? ''),
+                'patrimonio' => (string) ($item->fields['otherserial'] ?? ''),
             ],
             'checklist'    => $in['checklist'],
             'observacoes'  => $in['observacoes'],
@@ -565,13 +826,6 @@ class PluginAssettermsTerm extends CommonGLPI
         return $png;
     }
 
-    /**
-     * Dimensões máximas (pixels) da imagem da assinatura. O quadro tem até ~1050 x 180 px na tela,
-     * multiplicados pela densidade do monitor (devicePixelRatio, até 3 em celulares e telas 4K).
-     */
-    public const SIGNATURE_MAX_W = 4000;
-    public const SIGNATURE_MAX_H = 1500;
-
     public static function fileName(array $d, int $time): string
     {
         return sprintf(
@@ -583,21 +837,29 @@ class PluginAssettermsTerm extends CommonGLPI
     }
 
     /**
-     * Gera o PDF, grava na aba Documentos, atualiza usuário e status do computador e registra no histórico.
+     * Gera o PDF, grava na aba Documentos, atualiza usuário e status do equipamento e registra no histórico.
      * $d precisa ter data, assinatura, modo e ip. Retorna [documents_id, nome do status, conteúdo do PDF].
      *
      * @throws RuntimeException com a mensagem para o usuário
      */
-    public static function archive(Computer $computer, array $d, int $time): array
+    public static function archive(CommonDBTM $item, array $d, int $time): array
     {
         global $DB;
+        self::ensureSchema();
+        $itemtype = self::normalizeItemtype($item->getType());
+        $itemId   = (int) $item->getID();
+
+        if (!isset($d['itemtype'])) {
+            $d['itemtype'] = $itemtype;
+        }
+
         $pdf     = self::buildPdf($d);
         $titulo  = $d['tipo'] === 'devolucao' ? 'Termo de Devolução' : 'Termo de Entrega';
         $arquivo = self::fileName($d, $time);
         $nome    = $d['colaborador']['nome'];
 
         // O GLPI move o arquivo do diretório temporário, confere o tipo e calcula o checksum.
-        // O prefixo único evita que dois termos do mesmo computador no mesmo segundo usem o mesmo arquivo;
+        // O prefixo único evita que dois termos do mesmo equipamento no mesmo segundo usem o mesmo arquivo;
         // o GLPI o tira do nome (_prefix_filename), como faz com os uploads.
         $prefixo = uniqid('', true);
         $tmp     = GLPI_TMP_DIR . '/' . $prefixo . $arquivo;
@@ -614,7 +876,7 @@ class PluginAssettermsTerm extends CommonGLPI
         }
         $input = self::coreInput([
             'name'              => $titulo . ' - ' . ($d['equipamento']['nome'] ?: 'equipamento') . ' - ' . $nome . ' - ' . date('d/m/Y', $time),
-            'entities_id'       => (int) $computer->fields['entities_id'],
+            'entities_id'       => (int) $item->fields['entities_id'],
             'is_recursive'      => 0,
             'comment'           => sprintf('%s de %s. Código %s. %s.', $titulo, $nome, $d['codigo'], $modo),
             'users_id'          => (int) $d['tecnico_id'],
@@ -631,32 +893,32 @@ class PluginAssettermsTerm extends CommonGLPI
         }
 
         try {
-            // Vínculo feito à parte: criando o documento já vinculado, o GLPI 10 troca o nome pelo do computador
+            // Vínculo feito à parte: criando o documento já vinculado, o GLPI 10 troca o nome pelo do equipamento
             $link = new Document_Item();
             $linked = $link->add([
                 'documents_id' => $doc_id,
-                'itemtype'     => 'Computer',
-                'items_id'     => (int) $computer->getID(),
-                'entities_id'  => (int) $computer->fields['entities_id'],
+                'itemtype'     => $itemtype,
+                'items_id'     => $itemId,
+                'entities_id'  => (int) $item->fields['entities_id'],
             ]);
             if (!$linked) {
-                throw new RuntimeException('Não foi possível vincular o documento ao computador.');
+                throw new RuntimeException('Não foi possível vincular o documento ao equipamento.');
             }
-            self::registerDocument($doc_id, (int) $computer->getID(), $d);
+            self::registerDocument($doc_id, $itemId, $d, $itemtype);
             // O GLPI grava como dono do documento quem está logado, e na assinatura pelo link é o colaborador
             if ((int) $d['tecnico_id'] > 0 && (int) ($document->fields['users_id'] ?? 0) !== (int) $d['tecnico_id']) {
                 $DB->update('glpi_documents', ['users_id' => (int) $d['tecnico_id']], ['id' => $doc_id]);
             }
 
-            $update = ['id' => (int) $computer->getID(), 'users_id' => $d['tipo'] === 'entrega' ? (int) $d['colaborador']['id'] : 0];
+            $update = ['id' => $itemId, 'users_id' => $d['tipo'] === 'entrega' ? (int) $d['colaborador']['id'] : 0];
             if ($d['tipo'] === 'devolucao') {
                 $update['contact'] = '';
             }
             if ((int) $d['state_id'] > 0) {
                 $update['states_id'] = (int) $d['state_id'];
             }
-            if (!$computer->update($update)) {
-                throw new RuntimeException('Não foi possível atualizar o usuário e o status do computador.');
+            if (!$item->update($update)) {
+                throw new RuntimeException('Não foi possível atualizar o usuário e o status do equipamento.');
             }
         } catch (Throwable $e) {
             // Desfaz o documento (e o arquivo), para uma nova tentativa não deixar termo duplicado
@@ -668,9 +930,9 @@ class PluginAssettermsTerm extends CommonGLPI
         $msg    = "{$titulo} #{$doc_id} arquivado ({$modo}). Colaborador: {$nome}. Código: {$d['codigo']}." . ($status !== '' ? " Status: {$status}." : '');
         // O termo já está arquivado: uma falha daqui em diante não pode levar quem chamou a tentar de novo
         try {
-            self::history((int) $computer->getID(), $msg);
-            // O pedido assinado pelo link já está SIGNED; sobram só os pendentes antigos
-            self::cancelPending((int) $computer->getID());
+            self::history($itemId, $msg, $itemtype);
+            // O pedido assinado pelo link já está SIGNED; sobram só os pendentes antigos deste ativo
+            self::cancelPending($itemId, 0, $itemtype);
         } catch (Throwable $e) {
             Toolbox::logInFile('php-errors', 'Asset Terms: termo #' . $doc_id . ' arquivado, mas falhou o histórico ou o cancelamento dos pendentes: ' . $e->getMessage() . "\n");
         }
@@ -678,16 +940,15 @@ class PluginAssettermsTerm extends CommonGLPI
         return [$doc_id, $status, $pdf];
     }
 
-    /** Documentos gerados pelo plugin (histórico de termos da aba) */
-    public const DOCS_TABLE = 'glpi_plugin_assetterms_documents';
-
     /** Registra o documento gerado pelo plugin, para o histórico não depender do nome do documento */
-    private static function registerDocument(int $doc_id, int $computers_id, array $d): void
+    private static function registerDocument(int $doc_id, int $items_id, array $d, string $itemtype = 'Computer'): void
     {
         global $DB;
+        $itemtype = self::normalizeItemtype($itemtype);
         $ok = $DB->insert(self::DOCS_TABLE, self::dbValues([
             'documents_id'  => $doc_id,
-            'computers_id'  => $computers_id,
+            'itemtype'      => $itemtype,
+            'computers_id'  => $items_id,
             'type'          => $d['tipo'] === 'devolucao' ? 'devolucao' : 'entrega',
             'code'          => (string) $d['codigo'],
             'date_creation' => date('Y-m-d H:i:s'),
@@ -708,7 +969,9 @@ class PluginAssettermsTerm extends CommonGLPI
             return;
         }
         try {
-            $DB->delete(self::DOCS_TABLE, ['documents_id' => $doc_id]);
+            if ($DB->tableExists(self::DOCS_TABLE)) {
+                $DB->delete(self::DOCS_TABLE, ['documents_id' => $doc_id]);
+            }
             $document = new Document();
             if ($document->getFromDB($doc_id)) {
                 $document->delete(['id' => $doc_id], true);
@@ -720,25 +983,17 @@ class PluginAssettermsTerm extends CommonGLPI
 
     // ------------------------------------------------- Dados do equipamento
 
-    /** Campos do equipamento que o técnico pode conferir ou completar no termo */
-    public const EQUIP_FIELDS = [
-        'fabricante' => 'Fabricante',
-        'modelo'     => 'Modelo',
-        'tipo'       => 'Tipo',
-        'cpu'        => 'Processador',
-        'ram'        => 'Memória',
-        'disk'       => 'Disco',
-        'so'         => 'Sistema operacional',
-    ];
-
     /**
      * Valores já cadastrados no GLPI para cada campo do equipamento (sugestões do formulário).
      *
      * @return array<string, string[]>
      */
-    public static function equipmentOptions(): array
+    public static function equipmentOptions(string $itemtype = 'Computer'): array
     {
         global $DB;
+        $itemtype = self::normalizeItemtype($itemtype);
+        $meta     = self::ASSET_TYPES[$itemtype];
+
         $names = static function (string $table) use ($DB): array {
             $out = [];
             foreach ($DB->request(['SELECT' => ['name'], 'DISTINCT' => true, 'FROM' => $table, 'WHERE' => ['NOT' => ['name' => '']], 'ORDER' => 'name', 'LIMIT' => 300]) as $r) {
@@ -746,59 +1001,70 @@ class PluginAssettermsTerm extends CommonGLPI
             }
             return $out;
         };
-        // Totais por computador já inventariados, mais tamanhos comuns
-        $totals = static function (string $table, string $field, callable $fmt, array $common) use ($DB): array {
-            $out = array_map($fmt, $common);
-            // GLPI 11: Glpi\DBAL\QueryExpression | GLPI 10: QueryExpression
-            $sum = 'SUM(' . $DB->quoteName($field) . ') AS total';
-            $sum = class_exists(\Glpi\DBAL\QueryExpression::class) ? new \Glpi\DBAL\QueryExpression($sum) : new \QueryExpression($sum);
+
+        $cpu  = [];
+        $ram  = [];
+        $disk = [];
+        if (!empty($meta['has_hw_specs'])) {
+            // Totais por equipamento já inventariados, mais tamanhos comuns
+            $totals = static function (string $table, string $field, callable $fmt, array $common) use ($DB, $itemtype): array {
+                $out = array_map($fmt, $common);
+                // GLPI 11: Glpi\DBAL\QueryExpression | GLPI 10: QueryExpression
+                $sum = 'SUM(' . $DB->quoteName($field) . ') AS total';
+                $sum = class_exists(\Glpi\DBAL\QueryExpression::class) ? new \Glpi\DBAL\QueryExpression($sum) : new \QueryExpression($sum);
+                foreach (
+                    $DB->request([
+                        'SELECT'  => [$sum],
+                        'FROM'    => $table,
+                        'WHERE'   => ['itemtype' => $itemtype, 'is_deleted' => 0],
+                        'GROUPBY' => 'items_id',
+                        'LIMIT'   => 2000,
+                    ]) as $r
+                ) {
+                    if ((int) $r['total'] > 0) {
+                        $out[] = $fmt((int) $r['total']);
+                    }
+                }
+                $out = array_values(array_unique($out));
+                usort($out, static fn ($a, $b) => (float) $a <=> (float) $b ?: strcmp($a, $b));
+                return $out;
+            };
+
+            foreach ($DB->request(['SELECT' => ['designation'], 'DISTINCT' => true, 'FROM' => 'glpi_deviceprocessors', 'ORDER' => 'designation', 'LIMIT' => 300]) as $r) {
+                $cpu[] = (string) $r['designation'];
+            }
+            $cpu  = array_values(array_filter($cpu));
+            $ram  = $totals('glpi_items_devicememories', 'size', [self::class, 'formatMemory'], [4096, 8192, 16384, 32768, 65536]);
+            $disk = $totals('glpi_items_deviceharddrives', 'capacity', [self::class, 'formatDisk'], [262144, 524288, 1048576, 2097152]);
+        }
+
+        $so = [];
+        if (!empty($meta['has_os_spec'])) {
             foreach (
                 $DB->request([
-                    'SELECT' => [$sum],
-                    'FROM'   => $table,
-                    'WHERE'  => ['itemtype' => 'Computer', 'is_deleted' => 0],
-                    'GROUPBY' => 'items_id',
-                    'LIMIT'  => 2000,
+                    'SELECT'    => ['os.name AS os_name', 'ver.name AS ver_name'],
+                    'DISTINCT'  => true,
+                    'FROM'      => 'glpi_items_operatingsystems AS item',
+                    'LEFT JOIN' => [
+                        'glpi_operatingsystems AS os'         => ['ON' => ['item' => 'operatingsystems_id', 'os' => 'id']],
+                        'glpi_operatingsystemversions AS ver' => ['ON' => ['item' => 'operatingsystemversions_id', 'ver' => 'id']],
+                    ],
+                    'LIMIT'     => 300,
                 ]) as $r
             ) {
-                if ((int) $r['total'] > 0) {
-                    $out[] = $fmt((int) $r['total']);
-                }
+                $so[] = trim(($r['os_name'] ?? '') . ' ' . ($r['ver_name'] ?? ''));
             }
-            $out = array_values(array_unique($out));
-            usort($out, static fn ($a, $b) => (float) $a <=> (float) $b ?: strcmp($a, $b));
-            return $out;
-        };
-
-        $cpu = [];
-        foreach ($DB->request(['SELECT' => ['designation'], 'DISTINCT' => true, 'FROM' => 'glpi_deviceprocessors', 'ORDER' => 'designation', 'LIMIT' => 300]) as $r) {
-            $cpu[] = (string) $r['designation'];
+            $so = array_values(array_unique(array_filter(array_merge($so, $names('glpi_operatingsystems')))));
+            sort($so);
         }
-        $so = [];
-        foreach (
-            $DB->request([
-                'SELECT'    => ['os.name AS os_name', 'ver.name AS ver_name'],
-                'DISTINCT'  => true,
-                'FROM'      => 'glpi_items_operatingsystems AS item',
-                'LEFT JOIN' => [
-                    'glpi_operatingsystems AS os'         => ['ON' => ['item' => 'operatingsystems_id', 'os' => 'id']],
-                    'glpi_operatingsystemversions AS ver' => ['ON' => ['item' => 'operatingsystemversions_id', 'ver' => 'id']],
-                ],
-                'LIMIT'     => 300,
-            ]) as $r
-        ) {
-            $so[] = trim(($r['os_name'] ?? '') . ' ' . ($r['ver_name'] ?? ''));
-        }
-        $so = array_values(array_unique(array_filter(array_merge($so, $names('glpi_operatingsystems')))));
-        sort($so);
 
         return [
             'fabricante' => $names('glpi_manufacturers'),
-            'modelo'     => $names('glpi_computermodels'),
-            'tipo'       => $names('glpi_computertypes'),
-            'cpu'        => array_values(array_filter($cpu)),
-            'ram'        => $totals('glpi_items_devicememories', 'size', [self::class, 'formatMemory'], [4096, 8192, 16384, 32768, 65536]),
-            'disk'       => $totals('glpi_items_deviceharddrives', 'capacity', [self::class, 'formatDisk'], [262144, 524288, 1048576, 2097152]),
+            'modelo'     => $names($meta['model_table']),
+            'tipo'       => $names($meta['type_table']),
+            'cpu'        => $cpu,
+            'ram'        => $ram,
+            'disk'       => $disk,
             'so'         => $so,
         ];
     }
@@ -844,7 +1110,7 @@ class PluginAssettermsTerm extends CommonGLPI
         try {
             $mailer = new GLPIMailer();
             if (method_exists($mailer, 'getEmail')) {
-                // GLPI 11: Symfony Mailer
+                // GLPI 11+: Symfony Mailer
                 $email = $mailer->getEmail();
                 $email->from(new \Symfony\Component\Mime\Address($sender['email'], (string) ($sender['name'] ?? '')));
                 $email->to(new \Symfony\Component\Mime\Address($to, $name));
@@ -929,18 +1195,18 @@ class PluginAssettermsTerm extends CommonGLPI
      */
     public static function sendSignedMails(array $req, string $pdf, string $arquivo, string $quando): bool
     {
-        global $CFG_GLPI;
-
         if (!self::mailConfigured()) {
             return false;
         }
 
-        $e    = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
-        $d    = $req['data'];
-        $acao = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
-        $eq   = $d['equipamento']['nome'];
-        $errors = [];
-        $copia  = false;
+        $e        = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $d        = $req['data'];
+        $acao     = $d['tipo'] === 'devolucao' ? 'devolução' : 'entrega';
+        $eq       = $d['equipamento']['nome'];
+        $itemtype = self::normalizeItemtype((string) ($req['itemtype'] ?? ($d['itemtype'] ?? 'Computer')));
+        $itemId   = (int) ($req['computers_id'] ?? ($d['items_id'] ?? 0));
+        $errors   = [];
+        $copia    = false;
 
         $err = $d['colaborador']['email'] === '' ? 'colaborador sem e-mail cadastrado' : self::sendMail(
             $d['colaborador']['email'],
@@ -962,15 +1228,15 @@ class PluginAssettermsTerm extends CommonGLPI
 
         $tech = self::userData((int) $req['users_id_tech']);
         if ($tech['email'] !== '') {
-            $link = $CFG_GLPI['url_base'] . '/front/computer.form.php?id=' . (int) $req['computers_id'];
+            $link = self::assetFormUrl($itemtype, $itemId, true);
             $err = self::sendMail(
                 $tech['email'],
                 $tech['nome'],
                 "Termo de {$acao} assinado por {$d['colaborador']['nome']} - {$eq}",
                 self::mailHtml("Termo de {$acao} assinado", [
                     $e($d['colaborador']['nome']) . " assinou o termo de {$acao} do equipamento <b>" . $e($eq) . '</b> em ' . $e($quando) . '.',
-                    'O PDF foi arquivado na aba Documentos do computador, e o usuário e o status do equipamento foram atualizados.',
-                ], ['Abrir o computador', $link]),
+                    'O PDF foi arquivado na aba Documentos do equipamento, e o usuário e o status do equipamento foram atualizados.',
+                ], ['Abrir o equipamento', $link]),
                 "{$d['colaborador']['nome']} assinou o termo de {$acao} do equipamento {$eq} em {$quando}.\n{$link}\n",
                 (int) $req['entities_id'],
                 [$pdf, $arquivo]
@@ -1016,6 +1282,7 @@ class PluginAssettermsTerm extends CommonGLPI
         $or = static fn ($v): string => trim((string) $v) !== '' ? (string) $v : 'Não informado';
         $texto = self::textoFor($d);
         $devolucao = $d['tipo'] === 'devolucao';
+        $itemtype = self::normalizeItemtype((string) ($d['itemtype'] ?? 'Computer'));
 
         // Aparência (logo, cor, rodapé e cabeçalho) da configuração da empresa; o PDF de exemplo manda a do formulário
         $marca    = $d['marca'] ?? PluginAssettermsConfig::getEffective((int) ($d['entities_id'] ?? 0));
@@ -1189,6 +1456,17 @@ class PluginAssettermsTerm extends CommonGLPI
         $row = static fn (string $label, string $value) => "<tr><td {$th}><b>{$e($label)}</b></td><td style=\"width:68%;\">{$e($value)}</td></tr>";
 
         $eq = $d['equipamento'];
+        $configParts = array_filter([
+            $eq['cpu'] ?? '',
+            !empty($eq['ram']) ? 'RAM ' . $eq['ram'] : '',
+            !empty($eq['disk']) ? 'Disco ' . $eq['disk'] : '',
+            $eq['so'] ?? '',
+        ]);
+        $configText = implode(' | ', $configParts);
+        $configRow  = ($itemtype === 'Computer' || $configText !== '')
+            ? $row('Configuração', $or($configText))
+            : '';
+
         // No layout de controle, o título e a empresa já estão no cabeçalho
         $html = ($controle === null
                 ? '<h2 style="text-align:center;color:' . $cor . ';">' . $e(mb_strtoupper($texto['titulo'])) . '</h2>'
@@ -1208,12 +1486,13 @@ class PluginAssettermsTerm extends CommonGLPI
 
             . '<h4 style="color:' . $cor . ';">2. Equipamento</h4>'
             . '<table cellpadding="3" border="0.3">'
+            . $row('Categoria', self::assetLabel($itemtype))
             . $row('Nome do ativo', $or($eq['nome']))
             . $row('Tipo', $or($eq['tipo']))
-            . $row('Fabricante / modelo', $or(trim($eq['fabricante'] . ' ' . $eq['modelo'])))
+            . $row('Fabricante / modelo', $or(trim(($eq['fabricante'] ?? '') . ' ' . ($eq['modelo'] ?? ''))))
             . $row('Número de série', $or($eq['serial']))
             . $row('Patrimônio', $or($eq['patrimonio']))
-            . $row('Configuração', $or(implode(' | ', array_filter([$eq['cpu'], $eq['ram'] ? 'RAM ' . $eq['ram'] : '', $eq['disk'] ? 'Disco ' . $eq['disk'] : '', $eq['so']]))))
+            . $configRow
             . '</table>'
 
             . '<h4 style="color:' . $cor . ';">3. Acessórios ' . ($devolucao ? 'devolvidos' : 'entregues') . '</h4>';
@@ -1332,31 +1611,102 @@ class PluginAssettermsTerm extends CommonGLPI
 
     // ---------------------------------------------------------------- Tela
 
-    /** Pedidos aguardando assinatura de todos os computadores que o usuário pode ver (menu do plugin) */
+    /**
+     * Carrega em lote os campos básicos dos ativos referenciados em todas as tabelas suportadas.
+     *
+     * @param array<string, int[]> $idsByType
+     * @return array<string, array<int, array>>
+     */
+    private static function loadAssetsBatch(array $idsByType): array
+    {
+        global $DB;
+        $loaded = [];
+        foreach ($idsByType as $type => $ids) {
+            $type = self::normalizeItemtype($type);
+            $ids  = array_values(array_unique(array_filter(array_map('intval', $ids))));
+            if (empty($ids)) {
+                continue;
+            }
+            $table = self::ASSET_TYPES[$type]['table'];
+            $loaded[$type] = [];
+            foreach (
+                $DB->request([
+                    'SELECT' => ['id', 'name', 'is_deleted', 'is_template', 'entities_id', 'is_recursive'],
+                    'FROM'   => $table,
+                    'WHERE'  => ['id' => $ids],
+                ]) as $assetRow
+            ) {
+                $loaded[$type][(int) $assetRow['id']] = $assetRow;
+            }
+        }
+        return $loaded;
+    }
+
+    /** Pedidos aguardando assinatura de todos os equipamentos que o usuário pode ver (menu do plugin) */
     public static function getAllPendingRequests(): array
     {
         global $DB;
-        $rows = [];
+        self::ensureSchema();
+        $viewable = self::viewableAssetTypes();
+        if (empty($viewable)) {
+            return [];
+        }
+
+        $where = [
+            'status'   => self::PENDING,
+            'itemtype' => array_keys($viewable),
+        ] + getEntitiesRestrictCriteria(self::TABLE);
+
+        $rawRows   = [];
+        $idsByType = [];
         foreach (
             $DB->request([
-                'SELECT'     => [self::TABLE . '.*', 'glpi_computers.name AS computer_name'],
-                'FROM'       => self::TABLE,
-                'INNER JOIN' => ['glpi_computers' => ['ON' => [self::TABLE => 'computers_id', 'glpi_computers' => 'id']]],
-                'WHERE'      => [self::TABLE . '.status' => self::PENDING, 'glpi_computers.is_deleted' => 0] + getEntitiesRestrictCriteria(self::TABLE),
-                'ORDER'      => 'date_send DESC',
-                'LIMIT'      => 200,
+                'FROM'  => self::TABLE,
+                'WHERE' => $where,
+                'ORDER' => 'date_send DESC',
+                'LIMIT' => 400,
             ]) as $row
         ) {
-            $row['data'] = json_decode((string) $row['data'], true) ?: [];
+            $type   = self::normalizeItemtype((string) ($row['itemtype'] ?? 'Computer'));
+            $itemId = (int) ($row['computers_id'] ?? 0);
+            if (!isset($viewable[$type]) || $itemId <= 0) {
+                continue;
+            }
+            $row['itemtype'] = $type;
+            $rawRows[] = $row;
+            $idsByType[$type][] = $itemId;
+        }
+
+        if (empty($rawRows)) {
+            return [];
+        }
+
+        $assets = self::loadAssetsBatch($idsByType);
+        $rows   = [];
+        foreach ($rawRows as $row) {
+            $type   = $row['itemtype'];
+            $itemId = (int) $row['computers_id'];
+            $asset  = $assets[$type][$itemId] ?? null;
+            if ($asset === null || !empty($asset['is_deleted'])) {
+                continue;
+            }
+            if (!Session::haveAccessToEntity((int) ($asset['entities_id'] ?? 0), !empty($asset['is_recursive']))) {
+                continue;
+            }
+            $row['item_name']     = (string) ($asset['name'] ?? '');
+            $row['computer_name'] = $row['item_name'];
+            $row['data']          = json_decode((string) $row['data'], true) ?: [];
             $rows[] = $row;
+            if (count($rows) >= 200) {
+                break;
+            }
         }
         return $rows;
     }
 
-    /** Tabela "Aguardando assinatura" (aba do computador e menu do plugin) */
-    public static function showPending(array $rows, bool $with_computer = false): void
+    /** Tabela "Aguardando assinatura" (aba do equipamento e menu do plugin) */
+    public static function showPending(array $rows, bool $with_asset = false): void
     {
-        global $CFG_GLPI;
         $e    = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
         $url  = self::webPath() . '/ajax/request.php';
         $mail = self::mailConfigured();
@@ -1371,20 +1721,28 @@ class PluginAssettermsTerm extends CommonGLPI
                     <thead>
                         <tr>
                             <th>Criado em</th>
-                            <?php if ($with_computer): ?><th>Equipamento</th><?php endif; ?>
+                            <?php if ($with_asset): ?><th>Equipamento</th><?php endif; ?>
                             <th>Termo</th><th>Colaborador</th><th>Enviado por</th><th></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($rows as $p):
-                            $can   = Computer::canUpdate() && (new Computer())->can((int) $p['computers_id'], UPDATE);
-                            $email = (string) ($p['data']['colaborador']['email'] ?? '');
+                            $itemtype   = self::normalizeItemtype((string) ($p['itemtype'] ?? 'Computer'));
+                            $itemId     = (int) ($p['computers_id'] ?? 0);
+                            $assetClass = $itemtype;
+                            $asset      = class_exists($assetClass) ? new $assetClass() : null;
+                            $can        = $asset !== null && $assetClass::canUpdate() && $asset->can($itemId, UPDATE);
+                            $email      = (string) ($p['data']['colaborador']['email'] ?? '');
+                            $itemName   = trim(self::fromCore((string) ($p['item_name'] ?? ($p['computer_name'] ?? ''))));
                             ?>
                             <tr data-request="<?= (int) $p['id'] ?>">
                                 <td><strong><?= $e(Html::convDateTime($p['date_send'])) ?></strong><br>
                                     <small class="text-muted"><?= ($p['data']['canal'] ?? 'email') === 'link' ? 'Link copiado' : 'Por e-mail' ?></small></td>
-                                <?php if ($with_computer): ?>
-                                    <td><a href="<?= $e($CFG_GLPI['root_doc'] . '/front/computer.form.php?id=' . (int) $p['computers_id']) ?>"><?= $e(self::fromCore((string) ($p['computer_name'] ?? ''))) ?></a></td>
+                                <?php if ($with_asset): ?>
+                                    <td>
+                                        <span class="badge bg-secondary-lt me-1"><?= $e(self::assetLabel($itemtype)) ?></span>
+                                        <a href="<?= $e(self::assetFormUrl($itemtype, $itemId)) ?>"><?= $e($itemName !== '' ? $itemName : '#' . $itemId) ?></a>
+                                    </td>
                                 <?php endif; ?>
                                 <td><?= $p['type'] === 'devolucao' ? 'Devolução' : 'Entrega' ?> <span class="text-muted">(<?= $e($p['code']) ?>)</span></td>
                                 <td><?= $e($p['data']['colaborador']['nome'] ?? '') ?><br><small class="text-muted"><?= $e($email) ?></small></td>
@@ -1425,11 +1783,12 @@ class PluginAssettermsTerm extends CommonGLPI
 
     /**
      * Lista termos arquivados em PDF na entidade ativa (até $limit registros mais recentes).
-     * Perfis sem Document::canView() veem apenas documentos vinculados a computadores ativos visíveis.
+     * Perfis sem Document::canView() veem apenas documentos vinculados a equipamentos ativos visíveis.
      */
     public static function getArchivedDocuments(string $busca = '', int $limit = 100, ?bool &$has_more = null): array
     {
         global $DB;
+        self::ensureSchema();
 
         $has_more = false;
         $limit    = max(1, min(500, $limit));
@@ -1439,24 +1798,70 @@ class PluginAssettermsTerm extends CommonGLPI
         }
 
         $can_view_docs = Document::canView();
-        $inner_joins   = [
-            'glpi_documents' => [
-                'ON' => [
-                    self::DOCS_TABLE => 'documents_id',
-                    'glpi_documents' => 'id',
-                ],
-            ],
-        ];
-        $computer_join = [
-            'ON' => [
-                self::DOCS_TABLE => 'computers_id',
-                'glpi_computers' => 'id',
-            ],
-        ];
+        $viewable      = self::viewableAssetTypes();
+        if (!$can_view_docs && empty($viewable)) {
+            return [];
+        }
 
-        $criteria = [
+        $where = ['glpi_documents.is_deleted' => 0];
+        $doc_ent = getEntitiesRestrictCriteria('glpi_documents', '', '', true);
+        if (!empty($doc_ent)) {
+            $where[] = $doc_ent;
+        }
+        if (!$can_view_docs) {
+            $where[self::DOCS_TABLE . '.itemtype'] = array_keys($viewable);
+        }
+
+        $busca = trim($busca);
+        if ($busca !== '') {
+            $raw_like = '%' . strtr($busca, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%';
+            $db_like  = self::dbValues(['v' => $raw_like])['v'];
+            $doc_like = self::coreInput($raw_like);
+
+            $or = [
+                'glpi_documents.name'      => ['LIKE', $doc_like],
+                'glpi_documents.comment'   => ['LIKE', $doc_like],
+                self::DOCS_TABLE . '.code' => ['LIKE', $db_like],
+            ];
+
+            foreach ($viewable as $type => $meta) {
+                $assetWhere = [
+                    'name'        => ['LIKE', $doc_like],
+                    'is_template' => 0,
+                ];
+                if (!$can_view_docs) {
+                    $assetWhere['is_deleted'] = 0;
+                }
+                $assetEnt = getEntitiesRestrictCriteria($meta['table'], '', '', true);
+                if (!empty($assetEnt)) {
+                    $assetWhere[] = $assetEnt;
+                }
+                $matchedIds = [];
+                foreach (
+                    $DB->request([
+                        'SELECT' => ['id'],
+                        'FROM'   => $meta['table'],
+                        'WHERE'  => $assetWhere,
+                        'LIMIT'  => 500,
+                    ]) as $m
+                ) {
+                    $matchedIds[] = (int) $m['id'];
+                }
+                if (!empty($matchedIds)) {
+                    $or[] = [
+                        self::DOCS_TABLE . '.itemtype'     => $type,
+                        self::DOCS_TABLE . '.computers_id' => $matchedIds,
+                    ];
+                }
+            }
+
+            $where[] = ['OR' => $or];
+        }
+
+        $baseCriteria = [
             'SELECT' => [
                 self::DOCS_TABLE . '.id AS doc_link_id',
+                self::DOCS_TABLE . '.itemtype',
                 self::DOCS_TABLE . '.computers_id',
                 self::DOCS_TABLE . '.type',
                 self::DOCS_TABLE . '.code',
@@ -1466,79 +1871,93 @@ class PluginAssettermsTerm extends CommonGLPI
                 'glpi_documents.comment',
                 'glpi_documents.users_id',
                 'glpi_documents.date_creation AS doc_date_creation',
-                'glpi_computers.id AS computer_id',
-                'glpi_computers.name AS computer_name',
-                'glpi_computers.is_deleted AS computer_is_deleted',
-                'glpi_computers.entities_id AS computer_entities_id',
-                'glpi_computers.is_recursive AS computer_is_recursive',
             ],
-            'FROM'   => self::DOCS_TABLE,
+            'FROM'       => self::DOCS_TABLE,
+            'INNER JOIN' => [
+                'glpi_documents' => [
+                    'ON' => [
+                        self::DOCS_TABLE => 'documents_id',
+                        'glpi_documents' => 'id',
+                    ],
+                ],
+            ],
+            'WHERE'      => $where,
+            'ORDER'      => [self::DOCS_TABLE . '.date_creation DESC', self::DOCS_TABLE . '.id DESC'],
         ];
 
-        if ($can_view_docs) {
-            $criteria['INNER JOIN'] = $inner_joins;
-            $criteria['LEFT JOIN']  = ['glpi_computers' => $computer_join];
-        } else {
-            $inner_joins['glpi_computers'] = $computer_join;
-            $criteria['INNER JOIN']        = $inner_joins;
-        }
+        $rows      = [];
+        $users     = [];
+        $batchSize = max(100, $limit + 1);
+        $offset    = 0;
 
-        $where   = ['glpi_documents.is_deleted' => 0];
-        $doc_ent = getEntitiesRestrictCriteria('glpi_documents', '', '', true);
-        if (!empty($doc_ent)) {
-            $where[] = $doc_ent;
-        }
-
-        $comp_ent = getEntitiesRestrictCriteria('glpi_computers', '', '', true);
-        if (!$can_view_docs) {
-            $where['glpi_computers.is_deleted']  = 0;
-            $where['glpi_computers.is_template'] = 0;
-            if (!empty($comp_ent)) {
-                $where[] = $comp_ent;
-            }
-        }
-
-        $busca = trim($busca);
-        if ($busca !== '') {
-            $raw_like   = '%' . strtr($busca, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%';
-            $db_like    = self::dbValues(['v' => $raw_like])['v'];
-            $doc_like   = self::coreInput($raw_like);
-            $comp_match = [
-                'glpi_computers.name'        => ['LIKE', $doc_like],
-                'glpi_computers.is_template' => 0,
-            ];
-            if ($can_view_docs && !empty($comp_ent)) {
-                $comp_match[] = $comp_ent;
-            }
-
-            $where[] = [
-                'OR' => [
-                    'glpi_documents.name'      => ['LIKE', $doc_like],
-                    'glpi_documents.comment'   => ['LIKE', $doc_like],
-                    self::DOCS_TABLE . '.code' => ['LIKE', $db_like],
-                    $comp_match,
-                ],
-            ];
-        }
-
-        $criteria['WHERE'] = $where;
-        $criteria['ORDER'] = [self::DOCS_TABLE . '.date_creation DESC', self::DOCS_TABLE . '.id DESC'];
-        $criteria['LIMIT'] = $limit + 1;
-
-        $rows  = [];
-        $users = [];
         try {
-            foreach ($DB->request($criteria) as $row) {
-                if (count($rows) >= $limit) {
-                    $has_more = true;
+            while (count($rows) <= $limit) {
+                $chunkCriteria          = $baseCriteria;
+                $chunkCriteria['START'] = $offset;
+                $chunkCriteria['LIMIT'] = $batchSize;
+
+                $chunk     = [];
+                $idsByType = [];
+                foreach ($DB->request($chunkCriteria) as $row) {
+                    $type   = self::normalizeItemtype((string) ($row['itemtype'] ?? 'Computer'));
+                    $itemId = (int) ($row['computers_id'] ?? 0);
+                    $row['itemtype'] = $type;
+                    $chunk[] = $row;
+                    if ($itemId > 0) {
+                        $idsByType[$type][] = $itemId;
+                    }
+                }
+
+                if (empty($chunk)) {
                     break;
                 }
-                $uid = (int) ($row['users_id'] ?? 0);
-                if ($uid > 0 && !isset($users[$uid])) {
-                    $users[$uid] = self::userName($uid);
+
+                $assets = self::loadAssetsBatch($idsByType);
+                foreach ($chunk as $row) {
+                    $type   = $row['itemtype'];
+                    $itemId = (int) ($row['computers_id'] ?? 0);
+                    $asset  = $itemId > 0 ? ($assets[$type][$itemId] ?? null) : null;
+
+                    $inEntity = $asset !== null
+                        && Session::haveAccessToEntity((int) ($asset['entities_id'] ?? 0), !empty($asset['is_recursive']));
+
+                    if (!$can_view_docs) {
+                        if (
+                            !isset($viewable[$type])
+                            || $asset === null
+                            || !empty($asset['is_deleted'])
+                            || !empty($asset['is_template'])
+                            || !$inEntity
+                        ) {
+                            continue;
+                        }
+                    }
+
+                    if (count($rows) >= $limit) {
+                        $has_more = true;
+                        break 2;
+                    }
+
+                    $uid = (int) ($row['users_id'] ?? 0);
+                    if ($uid > 0 && !isset($users[$uid])) {
+                        $users[$uid] = self::userName($uid);
+                    }
+                    $row['issuer']              = $uid > 0 ? $users[$uid] : '';
+                    $row['item_id']             = $asset !== null ? (int) $asset['id'] : 0;
+                    $row['item_name']           = $asset !== null ? (string) ($asset['name'] ?? '') : '';
+                    $row['item_is_deleted']     = $asset !== null ? (int) ($asset['is_deleted'] ?? 0) : 0;
+                    $row['item_entities_id']    = $asset !== null ? (int) ($asset['entities_id'] ?? 0) : 0;
+                    $row['item_is_recursive']   = $asset !== null ? (int) ($asset['is_recursive'] ?? 0) : 0;
+                    $row['computer_id']         = $row['item_id'];
+                    $row['computer_name']       = $row['item_name'];
+                    $row['computer_is_deleted'] = $row['item_is_deleted'];
+                    $rows[]                     = $row;
                 }
-                $row['issuer'] = $uid > 0 ? $users[$uid] : '';
-                $rows[]        = $row;
+
+                if (count($chunk) < $batchSize) {
+                    break;
+                }
+                $offset += $batchSize;
             }
         } catch (\Throwable $ex) {
             Toolbox::logInFile('php-errors', 'Asset Terms: falha ao listar termos arquivados: ' . $ex->getMessage() . "\n");
@@ -1549,14 +1968,24 @@ class PluginAssettermsTerm extends CommonGLPI
     }
 
     /** Lista e busca os termos de responsabilidade já arquivados em PDF. */
-    public static function showArchived(array $rows, string $busca = '', int $computer_id = 0, bool $has_more = false): void
+    public static function showArchived(array $rows, string $busca = '', int $item_id = 0, bool $has_more = false, string $itemtype = 'Computer'): void
     {
         global $CFG_GLPI;
         $e        = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+        $itemtype = self::normalizeItemtype($itemtype);
         $form_url = self::webPath() . '/front/term.php#termo-arquivados';
         $docs_url = $CFG_GLPI['root_doc']
             . '/front/document.php?is_deleted=0&criteria[0][field]=1&criteria[0][searchtype]=contains&criteria[0][value]=Termo+de&reset=reset';
-        $clear_url = self::webPath() . '/front/term.php' . ($computer_id > 0 ? '?id=' . $computer_id : '') . '#termo-arquivados';
+        $clear_params = [];
+        if ($itemtype !== 'Computer' || $item_id > 0) {
+            $clear_params['itemtype'] = $itemtype;
+        }
+        if ($item_id > 0) {
+            $clear_params['id'] = $item_id;
+        }
+        $clear_url = self::webPath() . '/front/term.php'
+            . (!empty($clear_params) ? '?' . http_build_query($clear_params) : '')
+            . '#termo-arquivados';
         ?>
         <div class="termo-card mt-4" id="termo-arquivados">
             <div class="termo-section-header">
@@ -1568,8 +1997,11 @@ class PluginAssettermsTerm extends CommonGLPI
                 <?php endif; ?>
             </div>
             <form class="termo-archived-search" method="get" action="<?= $e($form_url) ?>">
-                <?php if ($computer_id > 0): ?>
-                    <input type="hidden" name="id" value="<?= $computer_id ?>">
+                <?php if ($itemtype !== 'Computer' || $item_id > 0): ?>
+                    <input type="hidden" name="itemtype" value="<?= $e($itemtype) ?>">
+                <?php endif; ?>
+                <?php if ($item_id > 0): ?>
+                    <input type="hidden" name="id" value="<?= $item_id ?>">
                 <?php endif; ?>
                 <input type="search" class="form-control form-control-sm" name="busca" value="<?= $e($busca) ?>" maxlength="150"
                        placeholder="Buscar equipamento, colaborador, código..." aria-label="Buscar termos arquivados">
@@ -1600,10 +2032,14 @@ class PluginAssettermsTerm extends CommonGLPI
                         <tbody>
                             <?php foreach ($rows as $t):
                                 $date       = (string) (!empty($t['date_creation']) ? $t['date_creation'] : ($t['doc_date_creation'] ?? ''));
-                                $comp_id    = (int) ($t['computer_id'] ?? 0);
-                                $raw_comp   = (int) ($t['computers_id'] ?? 0);
-                                $comp_del   = !empty($t['computer_is_deleted']);
-                                $can_comp   = $comp_id > 0 && Session::haveAccessToEntity((int) ($t['computer_entities_id'] ?? 0), !empty($t['computer_is_recursive']));
+                                $rowType    = self::normalizeItemtype((string) ($t['itemtype'] ?? 'Computer'));
+                                $assetClass = $rowType;
+                                $itemId     = (int) ($t['item_id'] ?? ($t['computer_id'] ?? 0));
+                                $rawId      = (int) ($t['computers_id'] ?? 0);
+                                $itemDel    = !empty($t['item_is_deleted']) || !empty($t['computer_is_deleted']);
+                                $inEntity   = $itemId > 0 && Session::haveAccessToEntity((int) ($t['item_entities_id'] ?? 0), !empty($t['item_is_recursive']));
+                                $canType    = class_exists($assetClass) && $assetClass::canView();
+                                $canItem    = $itemId > 0 && $inEntity && $canType;
                                 $tipo_label = $t['type'] === 'devolucao' ? 'Devolução' : ($t['type'] === 'entrega' ? 'Entrega' : '-');
                                 $code       = trim((string) ($t['code'] ?? ''));
                                 $doc_name   = self::fromCore((string) ($t['name'] ?? ''));
@@ -1613,18 +2049,21 @@ class PluginAssettermsTerm extends CommonGLPI
                                 <tr>
                                     <td><strong><?= $e(Html::convDateTime($date)) ?></strong></td>
                                     <td>
-                                        <?php if ($comp_id > 0 && $can_comp):
-                                            $comp_name = trim(self::fromCore((string) ($t['computer_name'] ?? ''))); ?>
-                                            <a href="<?= $e($CFG_GLPI['root_doc'] . '/front/computer.form.php?id=' . $comp_id) ?>">
-                                                <?= $e($comp_name !== '' ? $comp_name : '#' . $comp_id) ?>
+                                        <span class="badge bg-secondary-lt me-1"><?= $e(self::assetLabel($rowType)) ?></span>
+                                        <?php if ($canItem):
+                                            $item_name = trim(self::fromCore((string) ($t['item_name'] ?? ($t['computer_name'] ?? '')))); ?>
+                                            <a href="<?= $e(self::assetFormUrl($rowType, $itemId)) ?>">
+                                                <?= $e($item_name !== '' ? $item_name : '#' . $itemId) ?>
                                             </a>
-                                            <?php if ($comp_del): ?>
+                                            <?php if ($itemDel): ?>
                                                 <span class="text-muted">(na lixeira)</span>
                                             <?php endif; ?>
-                                        <?php elseif ($comp_id > 0): ?>
+                                        <?php elseif ($itemId > 0 && !$inEntity): ?>
                                             <span class="text-muted">Equipamento de outra entidade</span>
+                                        <?php elseif ($itemId > 0): ?>
+                                            <span class="text-muted">Equipamento sem permissão</span>
                                         <?php else: ?>
-                                            <span class="text-muted">Equipamento removido<?= $raw_comp > 0 ? ' (#' . $raw_comp . ')' : '' ?></span>
+                                            <span class="text-muted">Equipamento removido<?= $rawId > 0 ? ' (#' . $rawId . ')' : '' ?></span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
@@ -1663,27 +2102,27 @@ class PluginAssettermsTerm extends CommonGLPI
     }
 
     /** Formulário do termo. $show_pending = false na página do menu, que já lista todos os pendentes. */
-    public static function showTermoForm(Computer $computer, bool $show_pending = true)
+    public static function showTermoForm(CommonDBTM $item, bool $show_pending = true)
     {
         global $DB, $CFG_GLPI;
 
-        $cid       = (int) $computer->getID();
-        $specs     = self::getComputerSpecs($computer);
-        $can_edit  = $computer->can($cid, UPDATE);
-        $states    = self::getStates();
-        $user_id   = (int) ($computer->fields['users_id'] ?? 0);
-        $user_name = self::holderName($computer);
-        $status    = (int) ($computer->fields['states_id'] ?? 0) > 0
-            ? self::fromCore((string) Dropdown::getDropdownName('glpi_states', (int) $computer->fields['states_id']))
+        self::ensureSchema();
+        $itemtype  = self::normalizeItemtype($item->getType());
+        $meta      = self::ASSET_TYPES[$itemtype];
+        $cid       = (int) $item->getID();
+        $specs     = self::getItemSpecs($item);
+        $can_edit  = $item->can($cid, UPDATE);
+        $states    = self::getStates($itemtype);
+        $user_id   = (int) ($item->fields['users_id'] ?? 0);
+        $user_name = self::holderName($item);
+        $status    = (int) ($item->fields['states_id'] ?? 0) > 0
+            ? self::fromCore((string) Dropdown::getDropdownName('glpi_states', (int) $item->fields['states_id']))
             : 'Não definido';
         $or = static fn ($v): string => trim((string) $v) !== '' ? (string) $v : 'Não informado';
         $e  = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
         // Termos já gerados para este equipamento: os registrados pelo plugin (desde a 1.5.1) e,
         // dos documentos anteriores à atualização, os que têm o nome "Termo de ..."
-        if (!$DB->tableExists(self::DOCS_TABLE)) {
-            self::installDocsTable();
-        }
         $origem = [['NOT' => ['pd.id' => null]]];
         $legacy = PluginAssettermsConfig::legacyMaxDocumentId();
         if ($legacy > 0) {
@@ -1698,7 +2137,7 @@ class PluginAssettermsTerm extends CommonGLPI
                 'LEFT JOIN'  => [self::DOCS_TABLE . ' AS pd' => ['ON' => ['pd' => 'documents_id', 'doc' => 'id']]],
                 'WHERE'      => [
                     'di.items_id'    => $cid,
-                    'di.itemtype'    => 'Computer',
+                    'di.itemtype'    => $itemtype,
                     'doc.is_deleted' => 0,
                     'OR'             => $origem,
                 ],
@@ -1708,14 +2147,23 @@ class PluginAssettermsTerm extends CommonGLPI
             $termos[] = $d;
         }
 
-        $base      = self::webPath();
-        $mail      = self::mailConfigured();
-        $state_uso = self::findState($states, 'Em uso');
-        $state_est = self::findState($states, 'Em estoque');
-        $cfg       = PluginAssettermsConfig::getEffective((int) ($computer->fields['entities_id'] ?? 0));
-        $clausulas = ['entrega' => self::clausula('entrega', $cfg), 'devolucao' => self::clausula('devolucao', $cfg)];
-        $options   = $can_edit ? self::equipmentOptions() : [];
-        $tech_sig  = $can_edit && PluginAssettermsSignature::get((int) Session::getLoginUserID()) !== null;
+        $base             = self::webPath();
+        $mail             = self::mailConfigured();
+        $state_uso        = self::findState($states, 'Em uso');
+        $state_est        = self::findState($states, 'Em estoque');
+        $cfg              = PluginAssettermsConfig::getEffective((int) ($item->fields['entities_id'] ?? 0));
+        $clausulas        = ['entrega' => self::clausula('entrega', $cfg), 'devolucao' => self::clausula('devolucao', $cfg)];
+        $options          = $can_edit ? self::equipmentOptions($itemtype) : [];
+        $tech_sig         = $can_edit && PluginAssettermsSignature::get((int) Session::getLoginUserID()) !== null;
+        $checklistDefault = self::checklistDefaultsFor($itemtype);
+
+        $visibleEquipFields = ['fabricante', 'modelo', 'tipo'];
+        if (!empty($meta['has_hw_specs'])) {
+            $visibleEquipFields = array_merge($visibleEquipFields, ['cpu', 'ram', 'disk']);
+        }
+        if (!empty($meta['has_os_spec'])) {
+            $visibleEquipFields[] = 'so';
+        }
         ?>
         <div class="termo-container">
             <div class="termo-card termo-header-card">
@@ -1725,22 +2173,24 @@ class PluginAssettermsTerm extends CommonGLPI
                         <p class="termo-subtitle">Entrega, devolução ou mudança de status do equipamento. Os termos ficam em PDF na aba Documentos.</p>
                     </div>
                     <div class="termo-badges">
+                        <span class="termo-badge badge-type"><i class="<?= $e($meta['icon']) ?>"></i> Tipo: <strong><?= $e($meta['label']) ?></strong></span>
                         <span class="termo-badge badge-status"><i class="ti ti-activity"></i> Status: <strong><?= $e($status) ?></strong></span>
                         <span class="termo-badge badge-user"><i class="ti ti-user"></i> Usuário: <strong><?= $e($user_name) ?></strong></span>
                     </div>
                 </div>
 
                 <div class="termo-specs-grid">
-                    <div class="spec-item"><span class="spec-label">Equipamento:</span><span class="spec-val"><?= $e($or(self::fromCore((string) ($computer->fields['name'] ?? '')))) ?></span></div>
+                    <div class="spec-item"><span class="spec-label">Equipamento:</span><span class="spec-val"><?= $e($or(self::fromCore((string) ($item->fields['name'] ?? '')))) ?></span></div>
                     <div class="spec-item"><span class="spec-label">Fabricante / modelo:</span><span class="spec-val"><?= $e($or(trim($specs['fabricante'] . ' ' . $specs['modelo']))) ?></span></div>
-                    <div class="spec-item"><span class="spec-label">Número de série:</span><span class="spec-val highlight"><?= $e($or($computer->fields['serial'] ?? '')) ?></span></div>
-                    <div class="spec-item"><span class="spec-label">Patrimônio:</span><span class="spec-val highlight"><?= $e($or($computer->fields['otherserial'] ?? '')) ?></span></div>
+                    <div class="spec-item"><span class="spec-label">Número de série:</span><span class="spec-val highlight"><?= $e($or($item->fields['serial'] ?? '')) ?></span></div>
+                    <div class="spec-item"><span class="spec-label">Patrimônio:</span><span class="spec-val highlight"><?= $e($or($item->fields['otherserial'] ?? '')) ?></span></div>
                 </div>
             </div>
 
             <?php if ($can_edit): ?>
             <form id="form-termo-responsabilidade" class="termo-card" method="post" action="<?= $e($base . '/ajax/save.php') ?>"
                   onsubmit="return false;">
+                <input type="hidden" name="itemtype" value="<?= $e($itemtype) ?>">
                 <input type="hidden" name="computers_id" value="<?= $cid ?>">
                 <input type="hidden" name="_glpi_csrf_token" value="<?= Session::getNewCSRFToken() ?>">
 
@@ -1751,7 +2201,7 @@ class PluginAssettermsTerm extends CommonGLPI
                         <label class="radio-card selected">
                             <input type="radio" name="tipo_termo" value="entrega" data-state="<?= $state_uso ?>" checked>
                             <div class="radio-content">
-                                <span class="radio-title"><i class="ti ti-device-laptop"></i> Entrega ao colaborador</span>
+                                <span class="radio-title"><i class="<?= $e($meta['icon']) ?>"></i> Entrega ao colaborador</span>
                                 <span class="radio-desc">Termo de responsabilidade. Vincula o equipamento ao colaborador e muda o status para <strong>Em uso</strong></span>
                             </div>
                         </label>
@@ -1779,7 +2229,7 @@ class PluginAssettermsTerm extends CommonGLPI
                         User::dropdown([
                             'name'   => 'users_id',
                             'value'  => $user_id,
-                            'entity' => (int) ($computer->fields['entities_id'] ?? 0),
+                            'entity' => (int) ($item->fields['entities_id'] ?? 0),
                             'right'  => 'all',
                         ]);
                         ?>
@@ -1801,7 +2251,7 @@ class PluginAssettermsTerm extends CommonGLPI
                             User::dropdown([
                                 'name'   => 'users_id_status',
                                 'value'  => 0,
-                                'entity' => (int) ($computer->fields['entities_id'] ?? 0),
+                                'entity' => (int) ($item->fields['entities_id'] ?? 0),
                                 'right'  => 'all',
                             ]);
                             ?>
@@ -1810,7 +2260,7 @@ class PluginAssettermsTerm extends CommonGLPI
                                    placeholder="Ex.: Maria (Comercial) ou o nome de quem não tem usuário no GLPI">
                             <small class="termo-hint">
                                 Escolha o usuário do GLPI, digite o nome, ou os dois. O nome fica no campo
-                                <strong>Usuário alternativo</strong> do computador. Sem usuário escolhido, é ele que identifica quem está com o equipamento.
+                                <strong>Usuário alternativo</strong> do equipamento. Sem usuário escolhido, é ele que identifica quem está com o equipamento.
                             </small>
                         </div>
                     </div>
@@ -1837,7 +2287,7 @@ class PluginAssettermsTerm extends CommonGLPI
                     <div class="termo-checklist-grid">
                         <?php foreach (self::CHECKLIST as $key => $label): ?>
                             <label class="check-item">
-                                <input type="checkbox" name="checklist[]" value="<?= $e($key) ?>" <?= in_array($key, self::CHECKLIST_DEFAULT, true) ? 'checked' : '' ?>>
+                                <input type="checkbox" name="checklist[]" value="<?= $e($key) ?>" <?= in_array($key, $checklistDefault, true) ? 'checked' : '' ?>>
                                 <?= $e($label) ?>
                             </label>
                         <?php endforeach; ?>
@@ -1848,10 +2298,11 @@ class PluginAssettermsTerm extends CommonGLPI
                     <label class="termo-label">Dados do equipamento no termo</label>
                     <small class="termo-hint d-block mb-2">
                         Vêm do inventário. Confira e complete: clique no campo para escolher um valor já cadastrado no GLPI ou digite.
-                        Muda só o termo, não o cadastro do computador.
+                        Muda só o termo, não o cadastro do equipamento.
                     </small>
                     <div class="termo-equip-grid">
-                        <?php foreach (self::EQUIP_FIELDS as $field => $label): ?>
+                        <?php foreach ($visibleEquipFields as $field):
+                            $label = self::EQUIP_FIELDS[$field]; ?>
                             <label class="termo-equip-item">
                                 <span><?= $e($label) ?></span>
                                 <input type="text" class="form-control" name="equip_<?= $field ?>" value="<?= $e($specs[$field] ?? '') ?>"
@@ -1981,7 +2432,7 @@ class PluginAssettermsTerm extends CommonGLPI
             <?php endif; ?>
 
             <?php
-            $pendentes = $show_pending ? self::getPendingRequests($cid) : [];
+            $pendentes = $show_pending ? self::getPendingRequests($cid, $itemtype) : [];
             if (!empty($pendentes)) {
                 self::showPending($pendentes);
             }
@@ -2019,5 +2470,25 @@ class PluginAssettermsTerm extends CommonGLPI
             </div>
         </div>
         <?php
+    }
+}
+
+if (
+    class_exists('CommonGLPI')
+    && property_exists('CommonGLPI', 'rightname')
+    && (new ReflectionProperty('CommonGLPI', 'rightname'))->hasType()
+) {
+    class PluginAssettermsTerm extends CommonGLPI implements PluginAssettermsTermConstants
+    {
+        use PluginAssettermsTermBody;
+
+        public static string $rightname = 'computer';
+    }
+} else {
+    class PluginAssettermsTerm extends CommonGLPI implements PluginAssettermsTermConstants
+    {
+        use PluginAssettermsTermBody;
+
+        public static $rightname = 'computer';
     }
 }

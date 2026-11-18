@@ -18,9 +18,9 @@ if (!defined('GLPI_ROOT')) {
 global $CFG_GLPI;
 
 // Sem sessão: vai direto para a tela de login e volta para este termo depois de entrar
-// (o padrão do GLPI 11 mostraria "sua sessão expirou", o que confunde quem vem do e-mail)
+// (o padrão do GLPI 11+ mostraria "sua sessão expirou", o que confunde quem vem do e-mail)
 if (Session::getLoginUserID() === false) {
-    $target = substr(PluginAssettermsTerm::webPath(), strlen($CFG_GLPI['root_doc'])) . '/front/sign.php?id=' . (int) ($_GET['id'] ?? 0);
+    $target = substr(PluginAssettermsTerm::webPath(), strlen((string) ($CFG_GLPI['root_doc'] ?? ''))) . '/front/sign.php?id=' . (int) ($_GET['id'] ?? 0);
     $home   = version_compare(GLPI_VERSION, '11.0.0-dev', '>=') ? '/' : '/index.php';
     Html::redirect($CFG_GLPI['root_doc'] . $home . '?redirect=' . rawurlencode($target));
     return;
@@ -31,6 +31,13 @@ $e   = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-
 $or  = static fn ($v): string => trim((string) $v) !== '' ? (string) $v : 'Não informado';
 $req = PluginAssettermsTerm::getRequest((int) ($_GET['id'] ?? 0));
 $me  = (int) Session::getLoginUserID();
+
+$asset    = null;
+$itemtype = 'Computer';
+if ($req !== null) {
+    $itemtype = PluginAssettermsTerm::normalizeItemtype((string) ($req['itemtype'] ?? 'Computer'));
+    $asset    = PluginAssettermsTerm::loadAsset($itemtype, (int) ($req['computers_id'] ?? 0));
+}
 
 $helpdesk = Session::getCurrentInterface() === 'helpdesk';
 if ($helpdesk) {
@@ -50,7 +57,7 @@ if ($req === null || (int) $req['users_id'] !== $me) {
 } elseif ((int) $req['status'] === PluginAssettermsTerm::CANCELED) {
     echo '<div class="termo-card"><h3 class="termo-title"><i class="ti ti-circle-x text-danger"></i> Termo cancelado</h3>'
         . '<p>A TI cancelou este termo. Se tiver dúvidas, fale com a equipe de TI.</p></div>';
-} elseif (!($comp = new Computer()) || !$comp->getFromDB((int) $req['computers_id']) || !empty($comp->fields['is_deleted'])) {
+} elseif ($asset === null || !empty($asset->fields['is_deleted'])) {
     echo '<div class="termo-card"><h3 class="termo-title"><i class="ti ti-alert-triangle text-warning"></i> Equipamento indisponível</h3>'
         . '<p>O equipamento deste termo não está mais disponível no inventário. Fale com a equipe de TI.</p></div>';
 } else {
@@ -67,8 +74,9 @@ if ($req === null || (int) $req['users_id'] !== $me) {
         </p>
         <div class="termo-specs-grid">
             <div class="spec-item"><span class="spec-label">Colaborador:</span><span class="spec-val"><?= $e($d['colaborador']['nome']) ?></span></div>
+            <div class="spec-item"><span class="spec-label">Categoria:</span><span class="spec-val"><?= $e(PluginAssettermsTerm::assetLabel($itemtype)) ?></span></div>
             <div class="spec-item"><span class="spec-label">Equipamento:</span><span class="spec-val"><?= $e($or($eq['nome'])) ?></span></div>
-            <div class="spec-item"><span class="spec-label">Fabricante / modelo:</span><span class="spec-val"><?= $e($or(trim($eq['fabricante'] . ' ' . $eq['modelo']))) ?></span></div>
+            <div class="spec-item"><span class="spec-label">Fabricante / modelo:</span><span class="spec-val"><?= $e($or(trim(($eq['fabricante'] ?? '') . ' ' . ($eq['modelo'] ?? '')))) ?></span></div>
             <div class="spec-item"><span class="spec-label">Número de série:</span><span class="spec-val highlight"><?= $e($or($eq['serial'])) ?></span></div>
             <div class="spec-item"><span class="spec-label">Patrimônio:</span><span class="spec-val highlight"><?= $e($or($eq['patrimonio'])) ?></span></div>
             <div class="spec-item"><span class="spec-label">Código do termo:</span><span class="spec-val"><?= $e($d['codigo']) ?></span></div>
