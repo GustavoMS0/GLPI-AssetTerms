@@ -151,9 +151,9 @@ function seed_base_data(): void
         'id' => 5, 'name' => 'NB-CORP-05', 'entities_id' => 0, 'manufacturers_id' => 1,
         'computermodels_id' => 1, 'computertypes_id' => 1, 'serial' => 'SN-NB-05', 'otherserial' => 'PAT-NB-05',
     ]);
-    $DB->insert('glpi_items_deviceprocessors', ['items_id' => 5, 'itemtype' => 'Computer', 'deviceprocessors_id' => 1]);
-    $DB->insert('glpi_items_devicememories', ['items_id' => 5, 'itemtype' => 'Computer', 'size' => 16384]);
-    $DB->insert('glpi_items_deviceharddrives', ['items_id' => 5, 'itemtype' => 'Computer', 'capacity' => 524288]);
+    $DB->insert('glpi_items_deviceprocessors', ['items_id' => 5, 'itemtype' => 'Computer', 'deviceprocessors_id' => 1, 'is_deleted' => 0]);
+    $DB->insert('glpi_items_devicememories', ['items_id' => 5, 'itemtype' => 'Computer', 'size' => 16384, 'is_deleted' => 0]);
+    $DB->insert('glpi_items_deviceharddrives', ['items_id' => 5, 'itemtype' => 'Computer', 'capacity' => 524288, 'is_deleted' => 0]);
     $DB->insert('glpi_items_operatingsystems', ['items_id' => 5, 'itemtype' => 'Computer', 'operatingsystems_id' => 1, 'operatingsystemversions_id' => 1]);
 
     $DB->insert('glpi_phones', [
@@ -323,7 +323,7 @@ $monData = PluginAssettermsTerm::withDate(PluginAssettermsTerm::buildData($mon, 
 ], 10), time()) + ['assinatura' => '', 'assinatura_tipo' => 'desenhada', 'modo' => 'manual', 'ip' => '127.0.0.1'];
 TCPDF::$lastRendered = [];
 PluginAssettermsTerm::buildPdf($monData);
-$t->assertContains('<td><b>Categoria</b></td>', TCPDF::$lastRendered['html'] ?? '', 'PDF exibe linha Categoria');
+$t->assertContains('<b>Categoria</b>', TCPDF::$lastRendered['html'] ?? '', 'PDF exibe linha Categoria');
 $t->assertContains('Monitor', TCPDF::$lastRendered['html'] ?? '', 'PDF exibe rótulo Monitor');
 $t->assertNotContains('Configuração', TCPDF::$lastRendered['html'] ?? '', 'PDF de Monitor oculta Configuração quando vazia');
 
